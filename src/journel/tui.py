@@ -205,11 +205,6 @@ class JournelTUI(App):
         color: $text;
         padding: 0 1;
     }
-
-    #empty-state {
-        padding: 2 1;
-        text-align: center;
-    }
     """
 
     BINDINGS = [
@@ -292,8 +287,8 @@ class JournelTUI(App):
             else:
                 msg = f"[dim]No {self.current_filter} projects.\n\nPress [cyan]*[/cyan] to see all projects.[/dim]"
 
-            # Use Label directly, not wrapped in ListItem
-            label = Label(msg, id="empty-state")
+            # Use Label directly, not wrapped in ListItem (no ID needed - prevents duplicates)
+            label = Label(msg)
             list_view.mount(label)
         else:
             for project in self.projects:
