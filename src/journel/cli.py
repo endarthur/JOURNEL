@@ -733,6 +733,27 @@ def stats(ctx):
 
 
 @main.command()
+@click.pass_context
+def tui(ctx):
+    """Launch interactive Terminal UI for browsing projects.
+
+    Navigate with arrow keys or vim keys (j/k).
+    Press ? or F1 for help.
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+
+    try:
+        from .tui import run_tui
+        run_tui(storage)
+    except ImportError:
+        print_error("TUI requires 'textual' library")
+        print_info("Install with: pip install textual")
+    except Exception as e:
+        print_error(f"Failed to launch TUI: {e}")
+
+
+@main.command()
 def sync():
     """Sync JOURNEL data with git remote.
 

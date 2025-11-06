@@ -30,6 +30,7 @@ dependencies = [
     "rich>=13.0.0",
     "pyyaml>=6.0",
     "gitpython>=3.1.0",
+    "textual>=0.47.0",
 ]
 
 [project.optional-dependencies]
