@@ -126,7 +126,7 @@ class HelpScreen(ModalScreen):
   *             - All projects
 
 [bold]Actions:[/bold]
-  Space         - Mark selected project as completed
+  Shift+W       - Mark selected project as completed (Win!)
   Backspace     - Archive selected project
   U             - Unarchive selected project
   E             - Edit project (opens in external editor)
@@ -216,7 +216,7 @@ class JournelTUI(App):
         Binding("asterisk", "filter_all", "All", key_display="*"),
         Binding("r", "refresh", "Refresh", key_display="R"),
         Binding("question_mark", "show_help", "Help", key_display="?"),
-        Binding("space", "complete_project", "Complete", key_display="Space"),
+        Binding("W", "complete_project", "Win!", key_display="Shift+W"),
         Binding("backspace", "archive_project", "Archive"),
         Binding("u", "unarchive_project", "Unarchive"),
         Binding("e", "edit_project", "Edit"),
