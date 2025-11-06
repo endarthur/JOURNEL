@@ -114,7 +114,7 @@ class HelpScreen(ModalScreen):
         """Compose the help dialog."""
         help_text = """[bold cyan]JOURNEL TUI - Keyboard Shortcuts[/bold cyan]
 
-[bold]Navigation & Selection:[/bold]
+[bold]Navigation:[/bold]
   ↑/↓ or j/k    - Move selection up/down
   [dim]Arrow keys and vim keys both work to navigate the project list[/dim]
 
@@ -126,7 +126,7 @@ class HelpScreen(ModalScreen):
   *             - All projects
 
 [bold]Actions:[/bold]
-  Enter         - Mark selected project as completed
+  Space         - Mark selected project as completed
   Backspace     - Archive selected project
   U             - Unarchive selected project
   E             - Edit project (opens in external editor)
@@ -216,7 +216,7 @@ class JournelTUI(App):
         Binding("asterisk", "filter_all", "All", key_display="*"),
         Binding("r", "refresh", "Refresh", key_display="R"),
         Binding("question_mark", "show_help", "Help", key_display="?"),
-        Binding("enter", "complete_project", "Complete"),
+        Binding("space", "complete_project", "Complete", key_display="Space"),
         Binding("backspace", "archive_project", "Archive"),
         Binding("u", "unarchive_project", "Unarchive"),
         Binding("e", "edit_project", "Edit"),
