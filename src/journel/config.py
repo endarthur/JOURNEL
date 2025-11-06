@@ -68,6 +68,11 @@ class Config:
         return self.journel_dir / "completed"
 
     @property
+    def archived_dir(self) -> Path:
+        """Get archived projects directory."""
+        return self.journel_dir / "archived"
+
+    @property
     def meta_dir(self) -> Path:
         """Get meta directory."""
         return self.journel_dir / ".meta"

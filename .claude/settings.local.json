@@ -17,7 +17,12 @@
       "Bash(jnl status:*)",
       "Bash(jnl --no-emoji status:*)",
       "Bash(jnl:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial release of JOURNEL v0.1.0\n\nJOURNEL is an ADHD-friendly project organization and tracking system.\n\nFeatures:\n- Zero-friction CLI commands (jnl status, jnl log, etc.)\n- Plain text storage (Markdown + YAML)\n- Context restoration for picking up where you left off\n- Gentle gate-keeping to prevent project-hopping\n- Completion rituals to celebrate finishing projects\n- LLM-friendly data format for AI analysis\n- Git integration for version control\n- --no-emoji flag for ASCII-only output\n\nCommands implemented (14 total):\n- journel init - Initialize JOURNEL\n- journel new - Create projects with gate-keeping\n- journel status - Project overview (default command)\n- journel log - Quick activity logging\n- journel ctx - Export context for LLMs\n- journel done - Completion ritual with celebration\n- journel resume - Context restoration\n- journel list - Project filtering\n- journel edit - Quick file editing\n- journel link - Add GitHub/Claude URLs\n- journel wins - Show completions & streaks\n- journel stats - Analytics & insights\n- journel ask - Formatted questions for AI\n- journel note - Quick note capture\n- journel sync - Git remote sync\nEOF\n)\")",
+      "Bash(git tag:*)",
+      "Bash(git commit:*)",
+      "Bash(gh:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

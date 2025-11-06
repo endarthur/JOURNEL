@@ -22,7 +22,7 @@ from .display import (
 )
 from .models import LogEntry, Project
 from .storage import Storage
-from .utils import slugify
+from .utils import slugify, detect_git_repo, parse_time_from_message
 
 
 def get_storage(no_emoji: bool = False) -> Storage:
@@ -36,12 +36,34 @@ def get_storage(no_emoji: bool = False) -> Storage:
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.option("--no-emoji", is_flag=True, help="Disable emoji output (use ASCII)")
+@click.option("--install-completion", is_flag=True, help="Install shell completion")
+@click.option("--show-completion", is_flag=True, help="Show completion script")
 @click.pass_context
-def main(ctx, no_emoji):
+def main(ctx, no_emoji, install_completion, show_completion):
     """JOURNEL - ADHD-friendly project organization system.
 
     Run without arguments to show project status.
     """
+    # Handle completion installation
+    if install_completion:
+        import subprocess
+        shell = click.get_current_context().resilient_parsing
+        print_info("Installing shell completion...")
+        console.print("\n[bold]Shell Completion Setup:[/bold]")
+        console.print("\n[bold]Bash:[/bold]")
+        console.print('  echo \'eval "$(_JNL_COMPLETE=bash_source jnl)"\' >> ~/.bashrc')
+        console.print("\n[bold]Zsh:[/bold]")
+        console.print('  echo \'eval "$(_JNL_COMPLETE=zsh_source jnl)"\' >> ~/.zshrc')
+        console.print("\n[bold]Fish:[/bold]")
+        console.print('  echo \'eval (env _JNL_COMPLETE=fish_source jnl)\' >> ~/.config/fish/completions/jnl.fish')
+        console.print("\n[dim]After adding, restart your shell or source the file.[/dim]\n")
+        return
+
+    if show_completion:
+        console.print("\n[bold]Shell completion is built-in![/bold]")
+        console.print("\nRun: [cyan]jnl --install-completion[/cyan] for setup instructions\n")
+        return
+
     # Store no_emoji flag in context for subcommands to access
     ctx.ensure_object(dict)
     ctx.obj['no_emoji'] = no_emoji
@@ -115,15 +137,23 @@ def new(name, full_name, tags):
         last_active=date.today(),
     )
 
+    # Auto-detect git repo
+    git_url = detect_git_repo()
+    if git_url:
+        if click.confirm(f"\nDetected git repo: {git_url}\nLink to this project?", default=True):
+            project.github = git_url
+            print_success(f"Linked to: {git_url}")
+
     storage.save_project(project)
     storage.update_project_index()
 
     print_success(f"Created project: {name}")
     print_info(f"ID: {project_id}")
-    print_info("Next steps:")
-    console.print("  1. Add project details: jnl edit " + project_id)
-    console.print("  2. Link to GitHub/Claude: jnl link " + project_id + " <url>")
-    console.print("  3. Start logging work: jnl log \"your message\"")
+    if not git_url or project.github == "":
+        print_info("Next steps:")
+        console.print("  1. Add project details: jnl edit " + project_id)
+        console.print("  2. Link to GitHub/Claude: jnl link " + project_id + " <url>")
+        console.print("  3. Start logging work: jnl log \"your message\"")
 
 
 @main.command()
@@ -151,12 +181,17 @@ def status(ctx, brief):
 @main.command()
 @click.argument("message")
 @click.option("--project", "-p", help="Project to log for")
-@click.option("--hours", "-h", type=float, help="Hours spent")
+@click.option("--hours", "-h", type=float, help="Hours spent (can also be in message like '(2h)')")
 def log(message, project, hours):
     """Quick activity logging.
 
     If --project is not specified, attempts to detect current project
     from the current directory.
+
+    Time can be specified with --hours or in the message:
+        jnl log "Fixed bug (2h)"
+        jnl log "Implemented feature - 3h"
+        jnl log "worked 1.5h"
     """
     storage = get_storage()
 
@@ -167,6 +202,12 @@ def log(message, project, hours):
         potential_id = slugify(cwd.name)
         if storage.load_project(potential_id):
             project = potential_id
+
+    # Parse time from message if not explicitly provided
+    if hours is None:
+        message, parsed_hours = parse_time_from_message(message)
+        if parsed_hours:
+            hours = parsed_hours
 
     # Create log entry
     entry = LogEntry(
@@ -189,6 +230,8 @@ def log(message, project, hours):
     print_success("Logged activity")
     if project:
         print_info(f"Project: {project}")
+    if hours:
+        print_info(f"Time: {hours}h")
 
 
 @main.command()
@@ -347,11 +390,15 @@ def resume(project_id):
 @click.option("--active", is_flag=True, help="Show only active projects")
 @click.option("--dormant", is_flag=True, help="Show only dormant projects")
 @click.option("--completed", is_flag=True, help="Show only completed projects")
+@click.option("--archived", is_flag=True, help="Show only archived projects")
 @click.option("--tag", help="Filter by tag")
-def list_projects(active, dormant, completed, tag):
+def list_projects(active, dormant, completed, archived, tag):
     """List all projects with optional filters."""
     storage = get_storage()
-    projects = storage.list_projects()
+
+    # Include archived if specifically requested
+    include_archived = archived
+    projects = storage.list_projects(include_archived=include_archived)
 
     # Apply filters
     dormant_days = storage.config.get("dormant_days", 14)
@@ -360,13 +407,16 @@ def list_projects(active, dormant, completed, tag):
         projects = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= dormant_days]
         title = "Active Projects"
     elif dormant:
-        projects = [p for p in projects if p.days_since_active() > dormant_days and p.status != "completed"]
+        projects = [p for p in projects if p.days_since_active() > dormant_days and p.status not in ["completed", "archived"]]
         title = "Dormant Projects"
     elif completed:
         projects = [p for p in projects if p.status == "completed"]
         title = "Completed Projects"
+    elif archived:
+        projects = [p for p in projects if p.status == "archived"]
+        title = "Archived Projects"
     else:
-        title = "All Projects"
+        title = "All Projects (excluding archived)"
 
     if tag:
         projects = [p for p in projects if tag in p.tags]
@@ -406,17 +456,34 @@ def edit(project_id):
 
 @main.command()
 @click.argument("project_id")
-@click.argument("url")
+@click.argument("url", required=False)
 @click.option("--github", is_flag=True, help="Add as GitHub URL")
 @click.option("--claude", is_flag=True, help="Add as Claude project URL")
 def link(project_id, url, github, claude):
-    """Add GitHub or Claude links to a project."""
+    """Add GitHub or Claude links to a project.
+
+    If no URL is provided, attempts to auto-detect from git repo.
+    """
     storage = get_storage()
 
     project = storage.load_project(project_id)
     if not project:
         print_error(f"Project '{project_id}' not found")
         return
+
+    # Auto-detect if no URL provided
+    if not url:
+        git_url = detect_git_repo()
+        if git_url:
+            if click.confirm(f"Detected git repo: {git_url}\nLink to this project?", default=True):
+                url = git_url
+                github = True
+            else:
+                print_info("Cancelled")
+                return
+        else:
+            print_error("No URL provided and no git repo detected")
+            return
 
     if github or "github.com" in url:
         project.github = url
@@ -460,6 +527,98 @@ def note(text):
     print_success("Note saved")
     if project:
         print_info(f"Associated with project: {project}")
+
+
+@main.command()
+@click.argument("project_ids", nargs=-1, required=True)
+@click.option("--dormant", is_flag=True, help="Archive all dormant projects")
+@click.pass_context
+def archive(ctx, project_ids, dormant):
+    """Archive projects to clear them from active view.
+
+    Archives are for projects you're shelving (not finishing).
+    Use 'done' for completed projects.
+
+    Usage:
+        jnl archive my-project
+        jnl archive project1 project2 project3
+        jnl archive --dormant (archives all dormant projects)
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    config = storage.config
+
+    projects_to_archive = []
+
+    if dormant:
+        # Archive all dormant projects
+        dormant_days = config.get("dormant_days", 14)
+        all_projects = storage.list_projects()
+        projects_to_archive = [
+            p for p in all_projects
+            if p.status == "in-progress" and p.days_since_active() > dormant_days
+        ]
+
+        if not projects_to_archive:
+            print_info("No dormant projects to archive")
+            return
+
+        console.print(f"\n[yellow]Found {len(projects_to_archive)} dormant projects:[/yellow]")
+        for p in projects_to_archive:
+            console.print(f"  - {p.name} (inactive for {p.days_since_active()} days)")
+
+        if not click.confirm("\nArchive all these projects?", default=False):
+            print_info("Cancelled")
+            return
+    else:
+        # Archive specific projects
+        for project_id in project_ids:
+            project = storage.load_project(project_id)
+            if not project:
+                print_error(f"Project '{project_id}' not found")
+                continue
+            if project.status == "archived":
+                print_info(f"{project.name} is already archived")
+                continue
+            projects_to_archive.append(project)
+
+    # Archive them
+    for project in projects_to_archive:
+        storage.move_to_archived(project)
+        print_success(f"Archived: {project.name}")
+
+    storage.update_project_index()
+
+    if len(projects_to_archive) > 1:
+        console.print(f"\n[green]Archived {len(projects_to_archive)} projects[/green]")
+
+
+@main.command()
+@click.argument("project_id")
+@click.pass_context
+def unarchive(ctx, project_id):
+    """Restore an archived project back to active.
+
+    Usage:
+        jnl unarchive my-project
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+
+    project = storage.load_project(project_id)
+    if not project:
+        print_error(f"Project '{project_id}' not found")
+        return
+
+    if project.status != "archived":
+        print_error(f"{project.name} is not archived")
+        return
+
+    storage.unarchive_project(project)
+    storage.update_project_index()
+
+    print_success(f"Unarchived: {project.name}")
+    print_info("Project is now active again")
 
 
 @main.command()
@@ -536,6 +695,19 @@ def stats(ctx):
     if len(all_projects) > 0:
         completion_rate = (len(completed) / len(all_projects)) * 100
         console.print(f"\n[bold]Completion Rate:[/bold] {completion_rate:.1f}%")
+
+    # Time statistics
+    time_stats = storage.get_time_stats(days=30)
+    if time_stats["total_hours"] > 0:
+        console.print(f"\n[bold]Time Logged (last 30 days):[/bold]")
+        console.print(f"  Total: {time_stats['total_hours']:.1f} hours")
+
+        # Top projects by time
+        if time_stats["by_project"]:
+            sorted_projects = sorted(time_stats["by_project"].items(), key=lambda x: x[1], reverse=True)
+            console.print(f"\n  [bold]Top projects:[/bold]")
+            for proj_name, hours in sorted_projects[:5]:
+                console.print(f"    {proj_name}: {hours:.1f}h")
 
     # Recent activity
     recent_active = [p for p in all_projects if p.days_since_active() <= 7]

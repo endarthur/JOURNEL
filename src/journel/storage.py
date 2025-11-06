@@ -26,6 +26,7 @@ class Storage:
         ensure_dir(self.config.projects_dir)
         ensure_dir(self.config.logs_dir)
         ensure_dir(self.config.completed_dir)
+        ensure_dir(self.config.archived_dir)
         ensure_dir(self.config.meta_dir)
 
         # Create README
@@ -84,6 +85,11 @@ generate context summaries for Claude or other LLMs.
         if project_file.exists():
             return self._load_project_file(project_file)
 
+        # Check archived projects
+        project_file = self.config.archived_dir / f"{project_id}.md"
+        if project_file.exists():
+            return self._load_project_file(project_file)
+
         return None
 
     def _load_project_file(self, path: Path) -> Project:
@@ -97,6 +103,8 @@ generate context summaries for Claude or other LLMs.
         # Determine directory based on status
         if project.status == "completed":
             project_dir = self.config.completed_dir
+        elif project.status == "archived":
+            project_dir = self.config.archived_dir
         else:
             project_dir = self.config.projects_dir
 
@@ -120,7 +128,7 @@ generate context summaries for Claude or other LLMs.
         if self.config.get("auto_git_commit"):
             self._git_commit(f"Update project: {project.name}")
 
-    def list_projects(self, status: Optional[str] = None) -> List[Project]:
+    def list_projects(self, status: Optional[str] = None, include_archived: bool = False) -> List[Project]:
         """List all projects, optionally filtered by status."""
         projects = []
 
@@ -135,6 +143,14 @@ generate context summaries for Claude or other LLMs.
         if status is None or status == "completed":
             for project_file in self.config.completed_dir.glob("*.md"):
                 project = self._load_project_file(project_file)
+                projects.append(project)
+
+        # Load archived projects
+        if include_archived or status == "archived":
+            for project_file in self.config.archived_dir.glob("*.md"):
+                project = self._load_project_file(project_file)
+                if project.status != "archived":
+                    project.status = "archived"  # Ensure status is set
                 projects.append(project)
 
         return projects
@@ -200,6 +216,56 @@ generate context summaries for Claude or other LLMs.
 
         return "\n\n".join(logs) if logs else "No recent activity logged."
 
+    def get_time_stats(self, days: int = 30) -> dict:
+        """Get time statistics from logs.
+
+        Returns dict with:
+        - total_hours: total hours logged
+        - by_project: dict of project -> hours
+        - by_date: dict of date -> hours
+        """
+        import re
+        from collections import defaultdict
+
+        stats = {
+            "total_hours": 0.0,
+            "by_project": defaultdict(float),
+            "by_date": defaultdict(float),
+        }
+
+        current_date = date.today()
+
+        # Check last 2 months of log files
+        for month_offset in range(2):
+            target_date = date(current_date.year, current_date.month, 1)
+            if month_offset > 0:
+                if target_date.month == 1:
+                    target_date = date(target_date.year - 1, 12, 1)
+                else:
+                    target_date = date(target_date.year, target_date.month - 1, 1)
+
+            log_file = self.config.logs_dir / get_month_file(target_date)
+            if not log_file.exists():
+                continue
+
+            content = log_file.read_text(encoding="utf-8")
+
+            # Parse log entries
+            # Looking for patterns like: - **project** (2.0h): message
+            pattern = r'-\s+\*\*(\w+)\*\*\s+\((\d+\.?\d*)\s*h\):'
+            matches = re.findall(pattern, content)
+
+            for project_name, hours_str in matches:
+                hours = float(hours_str)
+                stats["total_hours"] += hours
+                stats["by_project"][project_name] += hours
+
+        # Convert defaultdicts to regular dicts
+        stats["by_project"] = dict(stats["by_project"])
+        stats["by_date"] = dict(stats["by_date"])
+
+        return stats
+
     def move_to_completed(self, project: Project) -> None:
         """Move a project to the completed directory."""
         old_path = self.config.projects_dir / project.file_name
@@ -212,6 +278,35 @@ generate context summaries for Claude or other LLMs.
 
             if self.config.get("auto_git_commit"):
                 self._git_commit(f"Complete project: {project.name}")
+
+    def move_to_archived(self, project: Project) -> None:
+        """Move a project to the archived directory."""
+        # Find the current location
+        old_path = None
+        if (self.config.projects_dir / project.file_name).exists():
+            old_path = self.config.projects_dir / project.file_name
+        elif (self.config.completed_dir / project.file_name).exists():
+            old_path = self.config.completed_dir / project.file_name
+
+        if old_path:
+            project.status = "archived"
+            self.save_project(project)
+            old_path.unlink()  # Remove from current location
+
+            if self.config.get("auto_git_commit"):
+                self._git_commit(f"Archive project: {project.name}")
+
+    def unarchive_project(self, project: Project) -> None:
+        """Move a project from archived back to active."""
+        old_path = self.config.archived_dir / project.file_name
+
+        if old_path.exists():
+            project.status = "in-progress"
+            self.save_project(project)
+            old_path.unlink()  # Remove from archived
+
+            if self.config.get("auto_git_commit"):
+                self._git_commit(f"Unarchive project: {project.name}")
 
     def _git_commit(self, message: str) -> None:
         """Create a git commit."""

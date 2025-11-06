@@ -131,6 +131,17 @@ def print_status(projects: List[Project], config) -> None:
             warn = get_icon("warning", use_emojis)
             console.print(f"\n[yellow]{warn} You have {len(active)} active projects. Consider completing some before starting new ones.[/yellow]")
 
+    # Project health warnings
+    if dormant:
+        warn = get_icon("warning", use_emojis)
+        console.print(f"\n[yellow]{warn} Health Check:[/yellow] {len(dormant)} dormant project(s)")
+
+        # Find stalled projects (30+ days)
+        stalled = [p for p in dormant if p.days_since_active() >= 30]
+        if stalled:
+            console.print(f"  [dim]{len(stalled)} project(s) inactive for 30+ days[/dim]")
+            console.print(f"  [dim]Consider: jnl archive --dormant[/dim]")
+
     console.print()  # Blank line
 
 
