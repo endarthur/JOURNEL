@@ -272,6 +272,9 @@ def main(ctx, no_emoji, install_completion, show_completion):
     """JOURNEL - ADHD-friendly project organization system.
 
     \b
+    New to JOURNEL? Start here: jnl help
+
+    \b
     DAILY WORKFLOW:
       status              Show all projects (default)
       log MESSAGE         Quick activity logging
@@ -311,7 +314,10 @@ def main(ctx, no_emoji, install_completion, show_completion):
       link PROJECT URL    Add GitHub/Claude link
       note MESSAGE        Quick note capture
 
-    Run 'jnl COMMAND --help' for detailed command help.
+    \b
+    Getting started:     jnl help
+    Complete reference:  jnl help --all
+    Command details:     jnl COMMAND --help
     """
     # Handle completion installation
     if install_completion:
@@ -1561,6 +1567,54 @@ def ai_stop(ctx, notes, agent):
         print_session_stopped(session, storage.load_project(session.project_id))
         if session.agent:
             console.print(f"[magenta]>>>[/magenta] Agent: [bold]{session.agent}[/bold]")
+
+
+@main.command(name="help")
+@click.argument("command", required=False)
+@click.option("--all", "show_all", is_flag=True, help="Show all commands (complete reference)")
+@click.pass_context
+def help_command(ctx, command, show_all):
+    """Show help for JOURNEL commands.
+
+    \b
+    Usage:
+      jnl help              Simplified help (essential commands)
+      jnl help --all        Complete command reference
+      jnl help <command>    Focused help for a specific command
+
+    \b
+    Examples:
+      jnl help              Show the basics
+      jnl help status       Quick help for 'status' command
+      jnl help --all        See all 26+ commands
+    """
+    from .help_text import get_simplified_help, get_full_help, get_command_help
+
+    # jnl help <command> - Show focused help for specific command
+    if command:
+        help_text = get_command_help(command)
+        if help_text:
+            console.print(help_text)
+        else:
+            # Command doesn't have custom focused help, fall back to --help
+            cmd = ctx.parent.command.get_command(ctx, command)
+            if cmd is None:
+                print_error(f"Unknown command: '{command}'")
+                console.print("\n[dim]Run[/dim] [cyan]jnl help[/cyan] [dim]to see available commands.[/dim]\n")
+                ctx.exit(1)
+
+            print_info(f"Showing detailed help for '{command}':")
+            console.print()
+            ctx.invoke(cmd, ["--help"])
+        return
+
+    # jnl help --all - Show complete reference
+    if show_all:
+        console.print(get_full_help())
+        return
+
+    # jnl help - Show simplified essentials
+    console.print(get_simplified_help())
 
 
 def tui_main():
