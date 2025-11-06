@@ -1,14 +1,15 @@
 """Display and formatting utilities using Rich."""
 
 from datetime import date
-from typing import List
+from typing import List, Optional
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from rich.progress import Progress, BarColumn, TextColumn
 
-from .models import Project
+from .models import Project, Session
 from .utils import format_date_relative
 
 
@@ -41,6 +42,34 @@ def get_icon(name: str, use_emojis: bool = True) -> str:
     if use_emojis:
         return EMOJIS.get(name, "")
     return ASCII_FALLBACKS.get(name, "")
+
+
+def format_completion(completion: int, show_bar: bool = False, width: int = 10) -> str:
+    """Format completion percentage with color coding.
+
+    Args:
+        completion: Completion percentage (0-100)
+        show_bar: If True, include a progress bar
+        width: Width of the progress bar in characters
+
+    Returns:
+        Formatted string with color markup
+    """
+    # Color coding based on completion
+    if completion >= 80:
+        color = "green"
+    elif completion >= 40:
+        color = "yellow"
+    else:
+        color = "red"
+
+    if show_bar:
+        # Create simple text-based progress bar using ASCII-safe characters
+        filled = int(completion / 10)  # 0-10 blocks
+        bar = "#" * filled + "-" * (10 - filled)
+        return f"[{color}]{completion:>3}%[/{color}] [{color}][{bar}][/{color}]"
+    else:
+        return f"[{color}]{completion:>3}%[/{color}]"
 
 
 def print_welcome() -> None:
@@ -90,9 +119,10 @@ def print_status(projects: List[Project], config) -> None:
         fire = get_icon("fire", use_emojis)
         console.print(f"\n[bold yellow]{fire} ACTIVE[/bold yellow]", f"({len(active)})")
         for p in active:
-            status_line = f"  [bold]{p.name:<20}[/bold] {p.completion:>3}%   {format_date_relative(p.last_active):<15}"
+            completion_str = format_completion(p.completion, show_bar=True)
+            status_line = f"  [bold]{p.name:<20}[/bold] {completion_str}   {format_date_relative(p.last_active):<15}"
             if p.next_steps:
-                status_line += f"  [dim][{p.next_steps[:40]}][/dim]"
+                status_line += f"  [dim][{p.next_steps[:30]}][/dim]"
             console.print(status_line)
     else:
         console.print("\n[dim]No active projects[/dim]")
@@ -102,7 +132,8 @@ def print_status(projects: List[Project], config) -> None:
         sleep = get_icon("sleep", use_emojis)
         console.print(f"\n[bold blue]{sleep} DORMANT[/bold blue] ({len(dormant)})")
         for p in dormant[:5]:  # Show max 5
-            console.print(f"  [dim]{p.name:<20}[/dim] {p.completion:>3}%   {format_date_relative(p.last_active):<15}")
+            completion_str = format_completion(p.completion, show_bar=False)
+            console.print(f"  [dim]{p.name:<20}[/dim] {completion_str}   {format_date_relative(p.last_active):<15}")
         if len(dormant) > 5:
             console.print(f"  [dim]... and {len(dormant) - 5} more[/dim]")
 
@@ -142,7 +173,52 @@ def print_status(projects: List[Project], config) -> None:
             console.print(f"  [dim]{len(stalled)} project(s) inactive for 30+ days[/dim]")
             console.print(f"  [dim]Consider: jnl archive --dormant[/dim]")
 
+    # Command hints (if enabled)
+    if config.get("show_command_hints", True):
+        _print_command_hints(active, dormant, completed, use_emojis)
+
     console.print()  # Blank line
+
+
+def _print_command_hints(active: List[Project], dormant: List[Project], completed: List[Project], use_emojis: bool) -> None:
+    """Print helpful command suggestions based on current project state."""
+    bulb = get_icon("bulb", use_emojis)
+
+    hints = []
+
+    # Context-specific hints
+    if active:
+        # Find projects close to completion
+        nearly_done = [p for p in active if p.completion >= 80]
+        if nearly_done:
+            hints.append(f"jnl done {nearly_done[0].id} - Complete {nearly_done[0].name}")
+
+        # Suggest logging work
+        most_recent = max(active, key=lambda p: p.last_active)
+        hints.append(f"jnl log \"your update\" - Log work on {most_recent.name}")
+
+        # Suggest getting context
+        hints.append("jnl ctx - Get AI context for planning")
+
+    if dormant:
+        oldest_dormant = max(dormant, key=lambda p: p.days_since_active())
+        hints.append(f"jnl resume {oldest_dormant.id} - Pick up {oldest_dormant.name}")
+
+        if len(dormant) > 2:
+            hints.append("jnl archive --dormant - Clean up dormant projects")
+
+    if not active and not dormant:
+        hints.append("jnl new <name> - Start a new project")
+
+    # General hints (always show 1-2)
+    hints.append("jnl tui - Browse projects interactively")
+
+    # Print hints
+    if hints:
+        console.print(f"\n[bold cyan]{bulb} Quick commands:[/bold cyan]")
+        # Show max 4 hints to avoid overwhelming
+        for hint in hints[:4]:
+            console.print(f"  [dim]>[/dim] {hint}")
 
 
 def print_project_details(project: Project) -> None:
@@ -202,10 +278,12 @@ def print_list(projects: List[Project], title: str = "Projects") -> None:
     table.add_column("Tags", style="dim")
 
     for p in projects:
+        # Use color-coded completion with progress bar
+        completion_display = format_completion(p.completion, show_bar=True)
         table.add_row(
             p.name,
             p.status,
-            f"{p.completion}%",
+            completion_display,
             format_date_relative(p.last_active),
             ", ".join(p.tags[:2]) if p.tags else "",
         )
@@ -272,3 +350,111 @@ def _ordinal(n: int) -> str:
     else:
         suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+# Session display functions
+
+def _format_time_duration(elapsed) -> str:
+    """Format timedelta as human-readable duration."""
+    total_seconds = int(elapsed.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
+
+def print_session_started(session: Session, project: Project) -> None:
+    """Print message when session starts."""
+    console.print(f"\n[bold green]>> SESSION STARTED[/bold green]\n")
+    console.print(f"[bold]{project.name}[/bold]")
+
+    if session.task:
+        console.print(f"Task: {session.task}")
+
+    start_time = session.start_time.strftime("%H:%M")
+    console.print(f"Started: {start_time}")
+
+    # Show context if available
+    if session.context_snapshot:
+        if session.context_snapshot.get("git_branch"):
+            console.print(f"[dim]Branch: {session.context_snapshot['git_branch']}[/dim]")
+        if session.context_snapshot.get("git_commit"):
+            console.print(f"[dim]Commit: {session.context_snapshot['git_commit']} - {session.context_snapshot.get('git_message', '')}[/dim]")
+
+    # Show next steps if available
+    if project.next_steps:
+        console.print(f"\n[cyan]Next:[/cyan] {project.next_steps}")
+
+    console.print(f"\n[dim]Use 'jnl stop' when done, 'jnl pause' for breaks[/dim]\n")
+
+
+def print_session_stopped(session: Session, project: Optional[Project]) -> None:
+    """Print message when session stops."""
+    elapsed = session.elapsed_time()
+    hours = elapsed.total_seconds() / 3600
+
+    console.print(f"\n[bold green][DONE] SESSION COMPLETE[/bold green]\n")
+
+    if project:
+        console.print(f"[bold]{project.name}[/bold]")
+
+    console.print(f"Duration: {_format_time_duration(elapsed)} ({hours:.1f}h)")
+
+    if session.task:
+        console.print(f"Task: {session.task}")
+
+    if session.notes:
+        console.print(f"\n[cyan]Notes:[/cyan] {session.notes}")
+
+    if session.interruptions:
+        console.print(f"\n[yellow]Interruptions:[/yellow] {len(session.interruptions)}")
+
+    if session.pause_duration.total_seconds() > 0:
+        console.print(f"[dim]Breaks: {_format_time_duration(session.pause_duration)}[/dim]")
+
+    console.print(f"\n[dim]Logged to activity and session history[/dim]")
+    console.print(f"[bold cyan]Take a break![/bold cyan]\n")
+
+
+def print_session_paused(session: Session, project: Optional[Project]) -> None:
+    """Print message when session is paused."""
+    elapsed = session.elapsed_time()
+
+    console.print(f"\n[bold yellow][PAUSE] SESSION PAUSED[/bold yellow]\n")
+
+    if project:
+        console.print(f"[bold]{project.name}[/bold]")
+
+    console.print(f"Active time: {_format_time_duration(elapsed)}")
+
+    if session.task:
+        console.print(f"Task: {session.task}")
+
+    console.print(f"\n[dim]Use 'jnl continue' to resume[/dim]\n")
+
+
+def print_session_resumed(session: Session, project: Optional[Project]) -> None:
+    """Print message when session resumes."""
+    elapsed = session.elapsed_time()
+
+    console.print(f"\n[bold green]>> SESSION RESUMED[/bold green]\n")
+
+    if project:
+        console.print(f"[bold]{project.name}[/bold]")
+
+    console.print(f"Previous time: {_format_time_duration(elapsed)}")
+
+    if session.task:
+        console.print(f"Task: {session.task}")
+
+    # Show context
+    if session.context_snapshot:
+        if session.context_snapshot.get("git_branch"):
+            console.print(f"[dim]Branch: {session.context_snapshot['git_branch']}[/dim]")
+        if session.context_snapshot.get("git_commit"):
+            console.print(f"[dim]Last commit: {session.context_snapshot['git_commit']}[/dim]")
+
+    console.print(f"\n[dim]Back to work! Use 'jnl stop' when done.[/dim]\n")

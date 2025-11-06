@@ -22,6 +22,7 @@ from .display import (
 )
 from .models import LogEntry, Project
 from .storage import Storage
+from .session import SessionManager
 from .utils import slugify, detect_git_repo, parse_time_from_message
 
 
@@ -201,6 +202,10 @@ def log(project_or_message, message, hours):
     """
     storage = get_storage()
 
+    # Track what was auto-detected for better feedback
+    project_auto_detected = False
+    time_parsed = False
+
     # Determine if first arg is project or message
     project = None
     if message is not None:
@@ -215,12 +220,14 @@ def log(project_or_message, message, hours):
         potential_id = slugify(cwd.name)
         if storage.load_project(potential_id):
             project = potential_id
+            project_auto_detected = True
 
     # Parse time from message if not explicitly provided
     if hours is None:
         actual_message, parsed_hours = parse_time_from_message(actual_message)
         if parsed_hours:
             hours = parsed_hours
+            time_parsed = True
 
     # Create log entry
     entry = LogEntry(
@@ -233,22 +240,35 @@ def log(project_or_message, message, hours):
     storage.add_log_entry(entry)
 
     # Update project last_active if project specified
+    project_name = None
     if project:
         proj = storage.load_project(project)
         if proj:
             proj.last_active = date.today()
             storage.save_project(proj)
             storage.update_project_index()
+            project_name = proj.name
 
-    print_success("Logged activity")
+    # Enhanced feedback
+    print_success(f"Logged: \"{actual_message}\"")
+
     if project:
-        print_info(f"Project: {project}")
+        if project_auto_detected:
+            console.print(f"[cyan]>>>[/cyan] Project: [bold]{project_name or project}[/bold] [dim](auto-detected)[/dim]")
+        else:
+            console.print(f"[cyan]>>>[/cyan] Project: [bold]{project_name or project}[/bold]")
+    else:
+        console.print(f"[yellow]>>>[/yellow] [dim]No project linked (not in a project directory)[/dim]")
+
     if hours:
-        print_info(f"Time: {hours}h")
+        if time_parsed:
+            console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold] [dim](parsed from message)[/dim]")
+        else:
+            console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold]")
 
 
 @main.command()
-@click.option("--project", "-p", help="Export context for specific project")
+@click.option("--project", "-p", help="Export context for specific project (use '.' for current directory)")
 @click.argument("question", required=False)
 def ctx(project, question):
     """Export context for LLM analysis.
@@ -260,8 +280,27 @@ def ctx(project, question):
         jnl ctx
         jnl ctx "what should I work on today?"
         jnl ctx --project mica
+        jnl ctx .                    (current directory project)
+        jnl ctx --project . "question"
     """
     storage = get_storage()
+
+    # Handle '.' shortcut for current directory
+    if question == ".":
+        # User typed: jnl ctx .
+        project = "."
+        question = None
+
+    if project == ".":
+        # Auto-detect project from current directory
+        cwd = Path.cwd()
+        potential_id = slugify(cwd.name)
+        proj = storage.load_project(potential_id)
+        if not proj:
+            print_error(f"No project found matching current directory: {cwd.name}")
+            print_info(f"Tried project ID: {potential_id}")
+            return
+        project = potential_id
 
     # Get projects
     if project:
@@ -284,7 +323,7 @@ def ctx(project, question):
 
 @main.command()
 @click.argument("question")
-@click.option("--project", "-p", help="Focus on specific project")
+@click.option("--project", "-p", help="Focus on specific project (use '.' for current directory)")
 def ask(question, project):
     """Format a question with auto-gathered context.
 
@@ -294,8 +333,20 @@ def ask(question, project):
     Usage:
         jnl ask "what should I work on today?"
         jnl ask "how can I finish this faster?" --project mica
+        jnl ask "what's next?" --project .
     """
     storage = get_storage()
+
+    # Handle '.' shortcut for current directory
+    if project == ".":
+        cwd = Path.cwd()
+        potential_id = slugify(cwd.name)
+        proj = storage.load_project(potential_id)
+        if not proj:
+            print_error(f"No project found matching current directory: {cwd.name}")
+            print_info(f"Tried project ID: {potential_id}")
+            return
+        project = potential_id
 
     # Get projects
     if project:
@@ -764,6 +815,145 @@ def tui(ctx):
         print_info("Install with: pip install textual")
     except Exception as e:
         print_error(f"Failed to launch TUI: {e}")
+
+
+# Session tracking commands
+
+@main.command()
+@click.argument("project_id")
+@click.argument("task", required=False, default="")
+@click.option("--force", "-f", is_flag=True, help="Auto-stop existing session")
+@click.pass_context
+def start(ctx, project_id, task, force):
+    """Start a work session on a project.
+
+    Tracks time and captures context for ADHD-friendly time awareness
+    and interruption recovery.
+
+    Usage:
+        jnl start myproject                    - Start session on project
+        jnl start myproject "Fix bug #123"     - Start with task description
+        jnl start myproject --force            - Auto-stop existing session first
+
+    The session will track elapsed time and remind you to take breaks.
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    # Load project
+    project = storage.load_project(project_id)
+    if not project:
+        print_error(f"Project '{project_id}' not found")
+        print_info("Use 'jnl list' to see available projects")
+        return
+
+    # Start session
+    try:
+        session = session_manager.start_session(project, task=task, force=force)
+
+        # Import display function (will add this next)
+        from .display import print_session_started
+        print_session_started(session, project)
+
+    except ValueError as e:
+        print_error(str(e))
+        print_info("Use 'jnl stop' to end current session, or --force to auto-stop")
+
+
+@main.command()
+@click.argument("notes", required=False, default="")
+@click.pass_context
+def stop(ctx, notes):
+    """End the current work session.
+
+    Saves elapsed time, creates activity log entry, and prompts for
+    reflection notes.
+
+    Usage:
+        jnl stop                               - End session (interactive)
+        jnl stop "Completed feature X"         - End with notes
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    # Check if session exists
+    if not session_manager.get_active_session():
+        print_error("No active session")
+        print_info("Start a session with: jnl start <project>")
+        return
+
+    # Get notes if not provided
+    if not notes:
+        notes = click.prompt(
+            "\nWhat did you accomplish? (optional, press Enter to skip)",
+            default="",
+            show_default=False
+        )
+
+    # Stop session
+    session = session_manager.stop_session(notes=notes)
+
+    if session:
+        from .display import print_session_stopped
+        print_session_stopped(session, storage.load_project(session.project_id))
+
+
+@main.command()
+@click.pass_context
+def pause(ctx):
+    """Pause the current work session.
+
+    Use this when taking a break or handling an interruption.
+    Pause time won't count toward your work time.
+
+    Usage:
+        jnl pause                              - Pause current session
+        jnl continue                           - Resume later
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    try:
+        session = session_manager.pause_session()
+
+        if session:
+            from .display import print_session_paused
+            print_session_paused(session, storage.load_project(session.project_id))
+        else:
+            print_error("No active session to pause")
+
+    except ValueError as e:
+        print_error(str(e))
+
+
+@main.command(name="continue")
+@click.pass_context
+def continue_session(ctx):
+    """Resume a paused work session.
+
+    Restores context and continues tracking time.
+
+    Usage:
+        jnl continue                           - Resume paused session
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    try:
+        session = session_manager.resume_session()
+
+        if session:
+            from .display import print_session_resumed
+            print_session_resumed(session, storage.load_project(session.project_id))
+        else:
+            print_error("No paused session to resume")
+
+    except ValueError as e:
+        print_error(str(e))
 
 
 @main.command()

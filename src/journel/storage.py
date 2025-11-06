@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import git
+import yaml
 
 from .config import Config
-from .models import LogEntry, Project
+from .models import LogEntry, Project, Session
 from .utils import ensure_dir, format_frontmatter, get_month_file, parse_frontmatter
 
 
@@ -28,6 +29,7 @@ class Storage:
         ensure_dir(self.config.completed_dir)
         ensure_dir(self.config.archived_dir)
         ensure_dir(self.config.meta_dir)
+        ensure_dir(self.config.journel_dir / "sessions")
 
         # Create README
         readme_path = self.config.journel_dir / "README.md"
@@ -342,3 +344,72 @@ generate context summaries for Claude or other LLMs.
         index_file = self.config.meta_dir / "projects.json"
         ensure_dir(self.config.meta_dir)
         index_file.write_text(json.dumps(index, indent=2), encoding="utf-8")
+
+    # Session management methods
+
+    def save_active_session(self, session: Session) -> None:
+        """Save the active session to active.yaml."""
+        sessions_dir = self.config.journel_dir / "sessions"
+        ensure_dir(sessions_dir)
+
+        active_file = sessions_dir / "active.yaml"
+        active_file.write_text(yaml.dump(session.to_dict()), encoding="utf-8")
+
+        # Auto-commit if enabled
+        if self.config.get("auto_git_commit"):
+            self._git_commit(f"Update active session: {session.project_id}")
+
+    def load_active_session(self) -> Optional[Session]:
+        """Load the active session from active.yaml."""
+        sessions_dir = self.config.journel_dir / "sessions"
+        active_file = sessions_dir / "active.yaml"
+
+        if not active_file.exists():
+            return None
+
+        try:
+            data = yaml.safe_load(active_file.read_text(encoding="utf-8"))
+            if data:
+                return Session.from_dict(data)
+        except Exception:
+            # If file is corrupted, return None
+            return None
+
+        return None
+
+    def clear_active_session(self) -> None:
+        """Clear the active session file."""
+        sessions_dir = self.config.journel_dir / "sessions"
+        active_file = sessions_dir / "active.yaml"
+
+        if active_file.exists():
+            active_file.unlink()
+
+        # Auto-commit if enabled
+        if self.config.get("auto_git_commit"):
+            self._git_commit("Clear active session")
+
+    def append_session_to_log(self, session: Session) -> None:
+        """Append a completed session to the monthly session log."""
+        sessions_dir = self.config.journel_dir / "sessions"
+        ensure_dir(sessions_dir)
+
+        # Get the session month file (e.g., 2025-11.md)
+        session_date = session.start_time.date()
+        log_file = sessions_dir / get_month_file(session_date)
+
+        # Load existing content
+        if log_file.exists():
+            content = log_file.read_text(encoding="utf-8")
+        else:
+            month_name = session_date.strftime("%B %Y")
+            content = f"# {month_name} Work Sessions\n\n"
+
+        # Append session markdown
+        content += session.to_markdown() + "\n\n"
+
+        log_file.write_text(content, encoding="utf-8")
+
+        # Auto-commit if enabled
+        if self.config.get("auto_git_commit"):
+            self._git_commit(f"Log session: {session.project_id}")

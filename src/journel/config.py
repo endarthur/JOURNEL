@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "completion_celebration": True,
     "auto_git_commit": True,
     "gentle_nudges": True,
+    "show_command_hints": True,
     "dormant_days": 14,
     "use_emojis": True,
 }

@@ -1,9 +1,9 @@
 """Data models for JOURNEL."""
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 @dataclass
@@ -89,3 +89,128 @@ class LogEntry:
             base += f": {self.message}"
             return base
         return f"- {self.message}"
+
+
+@dataclass
+class Session:
+    """Represents a work session on a project.
+
+    Tracks active work time, pauses, and context for interruption handling.
+    Enables time awareness and prevents time blindness.
+    """
+
+    id: str
+    project_id: str
+    task: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    paused_at: Optional[datetime] = None
+    pause_duration: timedelta = field(default_factory=lambda: timedelta(0))
+    interruptions: List[str] = field(default_factory=list)
+    context_snapshot: Dict[str, str] = field(default_factory=dict)
+    notes: str = ""
+
+    def elapsed_time(self, current_time: Optional[datetime] = None) -> timedelta:
+        """Calculate elapsed time excluding pauses.
+
+        Args:
+            current_time: Current time (defaults to now)
+
+        Returns:
+            Elapsed time as timedelta
+        """
+        if current_time is None:
+            current_time = datetime.now()
+
+        if self.end_time:
+            # Completed session
+            total_time = self.end_time - self.start_time
+        elif self.paused_at:
+            # Currently paused
+            total_time = self.paused_at - self.start_time
+        else:
+            # Currently active
+            total_time = current_time - self.start_time
+
+        # Subtract pause duration
+        return total_time - self.pause_duration
+
+    def is_active(self) -> bool:
+        """Check if session is currently active (not paused, not ended)."""
+        return self.end_time is None and self.paused_at is None
+
+    def is_paused(self) -> bool:
+        """Check if session is currently paused."""
+        return self.paused_at is not None and self.end_time is None
+
+    def is_ended(self) -> bool:
+        """Check if session has ended."""
+        return self.end_time is not None
+
+    def to_dict(self) -> Dict:
+        """Convert session to dictionary for YAML serialization."""
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "task": self.task,
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "paused_at": self.paused_at.isoformat() if self.paused_at else None,
+            "pause_duration": self.pause_duration.total_seconds(),
+            "interruptions": self.interruptions,
+            "context_snapshot": self.context_snapshot,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "Session":
+        """Create session from dictionary (YAML deserialization)."""
+        # Convert ISO strings back to datetime
+        data = data.copy()
+        data["start_time"] = datetime.fromisoformat(data["start_time"])
+        if data.get("end_time"):
+            data["end_time"] = datetime.fromisoformat(data["end_time"])
+        if data.get("paused_at"):
+            data["paused_at"] = datetime.fromisoformat(data["paused_at"])
+        data["pause_duration"] = timedelta(seconds=data.get("pause_duration", 0))
+
+        return cls(**data)
+
+    def to_markdown(self) -> str:
+        """Convert session to markdown for logging."""
+        elapsed = self.elapsed_time()
+        hours = elapsed.total_seconds() / 3600
+
+        # Format: ## 2025-11-06 10:15-12:30 (2.3h) - project-name
+        start_str = self.start_time.strftime("%H:%M")
+        if self.end_time:
+            end_str = self.end_time.strftime("%H:%M")
+            time_range = f"{start_str}-{end_str}"
+        else:
+            time_range = f"{start_str}-ongoing"
+
+        header = f"## {self.start_time.date()} {time_range} ({hours:.1f}h) - {self.project_id}"
+
+        lines = [header, ""]
+
+        if self.task:
+            lines.append(f"**Task:** {self.task}")
+            lines.append("")
+
+        if self.notes:
+            lines.append(f"**Notes:**")
+            lines.append(self.notes)
+            lines.append("")
+
+        if self.interruptions:
+            lines.append(f"**Interruptions:** {len(self.interruptions)}")
+            for interruption in self.interruptions:
+                lines.append(f"  - {interruption}")
+            lines.append("")
+
+        if self.pause_duration.total_seconds() > 0:
+            pause_min = self.pause_duration.total_seconds() / 60
+            lines.append(f"**Breaks:** {pause_min:.0f} minutes")
+            lines.append("")
+
+        return "\n".join(lines)
