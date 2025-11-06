@@ -1659,6 +1659,55 @@ def ai_stop(ctx, notes, agent):
             console.print(f"[magenta]>>>[/magenta] Agent: [bold]{session.agent}[/bold]")
 
 
+### ===== GitHub Import Commands =====
+
+@main.group(name="import")
+def import_group():
+    """Import projects from external sources (GitHub, etc.)."""
+    pass
+
+
+@import_group.command(name="github")
+@click.option("--recent", is_flag=True, help="Only show repos active in last 3 months")
+@click.option("--resume", is_flag=True, help="Resume previous import session")
+@click.option("--preview", is_flag=True, help="Preview what would be imported")
+@click.option("--archive-remaining", is_flag=True, help="Bulk archive all unprocessed repos")
+@click.option("--include-archived", is_flag=True, help="Include GitHub-archived repos")
+@click.option("--include-forks", is_flag=True, help="Include forks with no commits")
+def import_github(recent, resume, preview, archive_remaining, include_archived, include_forks):
+    """Import GitHub repos as JOURNEL projects.
+
+    ADHD-friendly batch workflow:
+    - Processes 10 repos at a time
+    - Default action: archive (press Enter)
+    - Easy escape: press 'q' to quit and save
+    - Resumable: picks up where you left off
+
+    Usage:
+        jnl import github              # Start interactive import
+        jnl import github --recent     # Only last 3 months
+        jnl import github --resume     # Continue previous session
+        jnl import github --preview    # See what would be imported
+    """
+    from .import_github import import_github_repos
+
+    import_github_repos(
+        recent_only=recent,
+        resume=resume,
+        preview=preview,
+        archive_remaining=archive_remaining,
+        include_archived=include_archived,
+        include_forks=include_forks,
+    )
+
+
+@import_group.command(name="status")
+def import_status():
+    """Show GitHub import progress."""
+    from .import_github import show_import_status
+    show_import_status()
+
+
 @main.command(name="help")
 @click.argument("command", required=False)
 @click.option("--all", "show_all", is_flag=True, help="Show all commands (complete reference)")

@@ -130,6 +130,25 @@ generate context summaries for Claude or other LLMs.
         if self.config.get("auto_git_commit"):
             self._git_commit(f"Update project: {project.name}")
 
+    def _save_project_to_path(self, project: Project, path: Path) -> None:
+        """Save a project to a specific path (used by import).
+
+        Args:
+            project: Project to save
+            path: Full path where to save the project file
+        """
+        # Create project body
+        if project.notes:
+            body = project.notes
+        else:
+            body = f"# {project.full_name or project.name}\n\n"
+            body += "## Overview\n\n## Recent Activity\n\n## What I Learned\n\n## Notes\n"
+
+        # Write file
+        content = format_frontmatter(project.to_frontmatter(), body)
+        ensure_dir(path.parent)
+        path.write_text(content, encoding="utf-8")
+
     def list_projects(self, status: Optional[str] = None, include_archived: bool = False) -> List[Project]:
         """List all projects, optionally filtered by status."""
         projects = []
