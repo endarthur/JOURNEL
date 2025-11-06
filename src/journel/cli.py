@@ -93,10 +93,15 @@ def init():
 
 @main.command()
 @click.argument("name")
-@click.option("--full-name", help="Full descriptive name")
+@click.argument("description", required=False)
 @click.option("--tags", help="Comma-separated tags")
-def new(name, full_name, tags):
+def new(name, description, tags):
     """Create a new project.
+
+    Usage:
+        jnl new MyProject
+        jnl new MyProject "A longer description"
+        jnl new MyProject "Description" --tags "python,cli"
 
     Includes gentle gate-keeping to prevent project-hopping.
     """
@@ -131,7 +136,7 @@ def new(name, full_name, tags):
     project = Project(
         id=project_id,
         name=name,
-        full_name=full_name or name,
+        full_name=description or name,
         tags=tags.split(",") if tags else [],
         created=date.today(),
         last_active=date.today(),
@@ -179,24 +184,32 @@ def status(ctx, brief):
 
 
 @main.command()
-@click.argument("message")
-@click.option("--project", "-p", help="Project to log for")
+@click.argument("project_or_message")
+@click.argument("message", required=False)
 @click.option("--hours", "-h", type=float, help="Hours spent (can also be in message like '(2h)')")
-def log(message, project, hours):
+def log(project_or_message, message, hours):
     """Quick activity logging.
 
-    If --project is not specified, attempts to detect current project
-    from the current directory.
+    Usage:
+        jnl log "Fixed bug (2h)"                    - auto-detect project
+        jnl log journel "Fixed bug (2h)"            - explicit project
+        jnl log "Implemented feature - 3h"          - time with dash
+        jnl log myproject "worked 1.5h"             - project + time
 
-    Time can be specified with --hours or in the message:
-        jnl log "Fixed bug (2h)"
-        jnl log "Implemented feature - 3h"
-        jnl log "worked 1.5h"
+    If project is not specified, attempts to detect from current directory.
+    Time can be specified with --hours or in the message using (2h), - 3h, or "worked 1.5h".
     """
     storage = get_storage()
 
-    # Auto-detect project if not specified
-    if not project:
+    # Determine if first arg is project or message
+    project = None
+    if message is not None:
+        # Two args provided: first is project, second is message
+        project = project_or_message
+        actual_message = message
+    else:
+        # One arg provided: it's the message, auto-detect project
+        actual_message = project_or_message
         cwd = Path.cwd()
         # Try to match directory name to project
         potential_id = slugify(cwd.name)
@@ -205,7 +218,7 @@ def log(message, project, hours):
 
     # Parse time from message if not explicitly provided
     if hours is None:
-        message, parsed_hours = parse_time_from_message(message)
+        actual_message, parsed_hours = parse_time_from_message(actual_message)
         if parsed_hours:
             hours = parsed_hours
 
@@ -213,7 +226,7 @@ def log(message, project, hours):
     entry = LogEntry(
         date=date.today(),
         project=project,
-        message=message,
+        message=actual_message,
         hours=hours,
     )
 

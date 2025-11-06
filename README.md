@@ -41,15 +41,15 @@ pip install -e .
 # Initialize JOURNEL (creates ~/.journel/)
 journel init
 
-# Create your first project
-journel new my-project --full-name "My Awesome Project" --tags "python,web"
+# Create your first project (natural syntax!)
+journel new my-project "My Awesome Project" --tags "python,web"
 
 # Check status (also the default command)
 journel
 jnl status
 
-# Log your work
-jnl log "Fixed the authentication bug" --project my-project --hours 2
+# Log your work (even more natural!)
+jnl log my-project "Fixed the authentication bug (2h)"
 
 # Get context for AI assistance
 jnl ctx
@@ -72,14 +72,14 @@ jnl stats
 - `journel wins` - Show completed projects and achievements
 
 ### Project Management
-- `journel new <name>` - Create a new project (with gate-keeping)
+- `journel new <name> [description]` - Create a new project (with gate-keeping)
 - `journel list [--active|--dormant|--completed] [--tag <tag>]` - List projects with filters
 - `journel edit <project>` - Open project file in $EDITOR
 - `journel link <project> <url>` - Add GitHub or Claude project URL
 - `journel done <project>` - Mark project as complete with celebration ritual
 
 ### Daily Workflow
-- `journel log "<message>"` - Quick activity logging
+- `journel log [project] "<message>"` - Quick activity logging (auto-detects project if omitted)
 - `journel note "<text>"` - Quick note capture
 - `journel resume <project>` - Restore context for picking up work
 
@@ -111,11 +111,14 @@ jnl resume my-project
 ### Logging Progress
 
 ```bash
-# Quick log
-jnl log "Implemented user authentication"
+# Quick log (auto-detects project from current directory)
+jnl log "Implemented user authentication (2h)"
 
-# With project and time tracking
-jnl log "Fixed database migration" --project backend --hours 3
+# Explicit project with time tracking
+jnl log backend "Fixed database migration (3h)"
+
+# Just a message, time parsed automatically
+jnl log myproject "Refactored API - 1.5h"
 
 # Add a note
 jnl note "Remember to test with PostgreSQL"
