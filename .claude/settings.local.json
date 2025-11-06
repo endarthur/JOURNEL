@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(journel init:*)",
+      "Bash(journel status:*)",
+      "Bash(journel new:*)",
+      "Bash(journel:*)",
+      "Bash(jnl log:*)",
+      "Bash(jnl ctx:*)",
+      "Bash(jnl link:*)",
+      "Bash(jnl list:*)",
+      "Bash(jnl resume:*)",
+      "Bash(cat:*)",
+      "Bash(jnl new:*)",
+      "Bash(jnl done:*)",
+      "Bash(jnl status:*)",
+      "Bash(jnl --no-emoji status:*)",
+      "Bash(jnl:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
