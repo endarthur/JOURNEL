@@ -97,7 +97,8 @@ def format_completion(completion: int, show_bar: bool = False, width: int = 10) 
         # Create simple text-based progress bar using ASCII-safe characters
         filled = int(completion / 10)  # 0-10 blocks
         bar = "#" * filled + "-" * (10 - filled)
-        return f"[{color}]{completion:>3}%[/{color}] [{color}][{bar}][/{color}]"
+        # Use parentheses instead of square brackets to avoid Rich markup conflicts
+        return f"[{color}]{completion:>3}%[/{color}] [{color}]({bar})[/{color}]"
     else:
         return f"[{color}]{completion:>3}%[/{color}]"
 
