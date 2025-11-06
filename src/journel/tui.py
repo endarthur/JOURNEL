@@ -66,7 +66,6 @@ class ProjectListItem(ListItem):
     """Custom list item for projects."""
 
     def __init__(self, project: Project, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.project = project
 
         # Build the label
@@ -77,13 +76,12 @@ class ProjectListItem(ListItem):
             "archived": "📦",
         }.get(project.status, "•")
 
-        label = f"{status_icon} {project.name} ({project.completion}%)"
-        self.set_label(label)
+        self.label_text = f"{status_icon} {project.name} ({project.completion}%)"
+        super().__init__(*args, **kwargs)
 
-    def set_label(self, label: str) -> None:
-        """Set the label text."""
-        # Create a Static widget with the label
-        self._label = Static(label)
+    def compose(self) -> ComposeResult:
+        """Compose the list item with a label."""
+        yield Static(self.label_text)
 
 
 class JournelTUI(App):
