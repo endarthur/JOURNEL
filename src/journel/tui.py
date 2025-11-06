@@ -8,6 +8,8 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Footer, Header, Label, ListItem, ListView, Static
 from textual.binding import Binding
+from textual.screen import ModalScreen
+from textual.events import Key
 
 from .config import Config
 from .storage import Storage
@@ -82,6 +84,73 @@ class ProjectListItem(ListItem):
     def compose(self) -> ComposeResult:
         """Compose the list item with a label."""
         yield Static(self.label_text)
+
+
+class HelpScreen(ModalScreen):
+    """Modal screen to display help information."""
+
+    CSS = """
+    HelpScreen {
+        align: center middle;
+    }
+
+    #help-dialog {
+        width: 70;
+        height: auto;
+        max-height: 90%;
+        background: $surface;
+        border: thick $primary;
+        padding: 2 3;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "dismiss", "Close"),
+        ("q", "dismiss", "Close"),
+        ("question_mark", "dismiss", "Close"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        """Compose the help dialog."""
+        help_text = """[bold cyan]JOURNEL TUI - Keyboard Shortcuts[/bold cyan]
+
+[bold]Navigation & Selection:[/bold]
+  ↑/↓ or j/k    - Move selection up/down
+  [dim]Arrow keys and vim keys both work to navigate the project list[/dim]
+
+[bold]Filters:[/bold]
+  A             - Active projects
+  D             - Dormant projects
+  C             - Completed projects
+  X             - Archived projects
+  *             - All projects
+
+[bold]Actions:[/bold]
+  Enter         - Mark selected project as completed
+  Backspace     - Archive selected project
+  U             - Unarchive selected project
+  E             - Edit project (opens in external editor)
+
+[bold]Other:[/bold]
+  R             - Refresh project list
+  Ctrl+\\        - Command palette
+  ?             - Toggle this help
+  Q or Esc      - Quit / Close help
+
+[dim]Press any key to close this help...[/dim]"""
+
+        with Container(id="help-dialog"):
+            yield Static(help_text)
+
+    def on_key(self, event: Key) -> None:
+        """Close on any keypress except the ones that would break things."""
+        # Don't dismiss on modifier keys
+        if event.key not in ("ctrl", "shift", "alt"):
+            self.dismiss()
+
+    def action_dismiss(self) -> None:
+        """Dismiss the help screen."""
+        self.dismiss()
 
 
 class JournelTUI(App):
@@ -283,29 +352,8 @@ class JournelTUI(App):
         self.notify("Projects refreshed")
 
     def action_show_help(self) -> None:
-        """Show help information."""
-        help_text = """[bold]JOURNEL TUI - Keyboard Shortcuts[/bold]
-
-[cyan]Filters:[/cyan]
-  A - Active projects
-  D - Dormant projects
-  C - Completed projects
-  X - Archived projects
-  * - All projects
-
-[cyan]Actions:[/cyan]
-  Enter     - Mark project as completed
-  Backspace - Archive project
-  U         - Unarchive project
-  E         - Edit project (opens in external editor)
-
-[cyan]Navigation:[/cyan]
-  ↑/↓ or j/k - Move selection up/down
-  R          - Refresh project list
-  Q          - Quit
-
-[dim]Press any key to close this help...[/dim]"""
-        self.notify(help_text, timeout=15)
+        """Show help modal."""
+        self.push_screen(HelpScreen())
 
     def action_complete_project(self) -> None:
         """Mark selected project as completed."""
