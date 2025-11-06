@@ -370,13 +370,15 @@ def init():
 @click.argument("name")
 @click.argument("description", required=False)
 @click.option("--tags", help="Comma-separated tags")
-def new(name, description, tags):
+@click.option("--ongoing", is_flag=True, help="Mark as ongoing/long-term project")
+def new(name, description, tags, ongoing):
     """Create a new project.
 
     Usage:
         jnl new MyProject
         jnl new MyProject "A longer description"
         jnl new MyProject "Description" --tags "python,cli"
+        jnl new MyProject --ongoing  (for long-term projects)
 
     Includes gentle gate-keeping to prevent project-hopping.
     """
@@ -385,19 +387,34 @@ def new(name, description, tags):
 
     # Check for existing projects
     projects = storage.list_projects()
-    active = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 14]
+    active_regular = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 14 and p.project_type == "regular"]
+    active_ongoing = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 90 and p.project_type == "ongoing"]
 
-    # Gate-keeping: warn if too many active projects
-    max_active = config.get("max_active_projects", 5)
-    if len(active) >= max_active:
-        print_error(f"You already have {len(active)} active projects!")
-        console.print("\nActive projects:")
-        for p in active:
-            console.print(f"  - {p.name} ({p.completion}% complete)")
+    # Gate-keeping: check appropriate limit based on project type
+    if ongoing:
+        max_ongoing = config.get("max_ongoing_projects", 2)
+        if len(active_ongoing) >= max_ongoing:
+            print_error(f"You already have {len(active_ongoing)} ongoing long-term projects!")
+            console.print("\nOngoing projects:")
+            for p in active_ongoing:
+                console.print(f"  - {p.name} ({p.completion}% complete)")
+            console.print("\n[yellow]Ongoing projects require sustained deep attention.[/yellow]")
+            console.print("[dim]Consider completing one or converting to regular tracking.[/dim]")
 
-        if not click.confirm("\nReally start something new?", default=False):
-            print_info("Good choice! Focus on finishing what you started.")
-            return
+            if not click.confirm("\nReally start another ongoing project?", default=False):
+                print_info("Good choice! Focus matters for long-term success.")
+                return
+    else:
+        max_active = config.get("max_active_projects", 5)
+        if len(active_regular) >= max_active:
+            print_error(f"You already have {len(active_regular)} active projects!")
+            console.print("\nActive projects:")
+            for p in active_regular:
+                console.print(f"  - {p.name} ({p.completion}% complete)")
+
+            if not click.confirm("\nReally start something new?", default=False):
+                print_info("Good choice! Focus on finishing what you started.")
+                return
 
     # Create project ID
     project_id = slugify(name)
@@ -415,6 +432,7 @@ def new(name, description, tags):
         tags=tags.split(",") if tags else [],
         created=date.today(),
         last_active=date.today(),
+        project_type="ongoing" if ongoing else "regular",
     )
 
     # Auto-detect git repo
@@ -434,6 +452,78 @@ def new(name, description, tags):
         console.print("  1. Add project details: jnl edit " + project_id)
         console.print("  2. Link to GitHub/Claude: jnl link " + project_id + " <url>")
         console.print("  3. Start logging work: jnl log \"your message\"")
+
+
+@main.command(name="set-ongoing")
+@click.argument("project")
+def set_ongoing(project):
+    """Mark a project as ongoing/long-term.
+
+    Ongoing projects:
+    - Don't count against your regular active project limit
+    - Have different activity expectations (weeks, not days)
+    - Should represent sustained multi-month/year efforts
+
+    Usage:
+        jnl set-ongoing myproject
+    """
+    storage = get_storage()
+    proj = storage.load_project(project)
+
+    if not proj:
+        print_error(f"Project '{project}' not found")
+        return
+
+    if proj.project_type == "ongoing":
+        print_info(f"{proj.name} is already marked as ongoing")
+        return
+
+    # Confirm the change
+    console.print(f"\n[bold]This will move {proj.name} to ONGOING tracking.[/bold]\n")
+    console.print("ONGOING projects:")
+    console.print("  - Don't count against your 5-project active limit")
+    console.print("  - Are expected to have gaps (weeks between activity)")
+    console.print("  - Should represent sustained multi-month/year efforts\n")
+
+    if not click.confirm("Is this truly an ongoing marathon project?", default=True):
+        print_info("No changes made")
+        return
+
+    proj.project_type = "ongoing"
+    storage.save_project(proj)
+    storage.update_project_index()
+
+    print_success(f"{proj.name} is now tracked as an ongoing long-term project")
+    print_info("Use 'jnl status' to see it in the ONGOING section")
+
+
+@main.command(name="set-regular")
+@click.argument("project")
+def set_regular(project):
+    """Mark a project as regular (not ongoing).
+
+    Converts an ongoing project back to regular active tracking.
+
+    Usage:
+        jnl set-regular myproject
+    """
+    storage = get_storage()
+    proj = storage.load_project(project)
+
+    if not proj:
+        print_error(f"Project '{project}' not found")
+        return
+
+    if proj.project_type == "regular":
+        print_info(f"{proj.name} is already regular tracking")
+        return
+
+    proj.project_type = "regular"
+    storage.save_project(proj)
+    storage.update_project_index()
+
+    print_success(f"{proj.name} is now tracked as a regular active project")
+    print_info("Use 'jnl status' to see it in the ACTIVE section")
 
 
 @main.command()

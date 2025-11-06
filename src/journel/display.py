@@ -146,34 +146,58 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
         console.print(f"    [dim]Stop: jnl stop | Pause: jnl pause[/dim]\n")
 
     # Categorize projects
-    active = []
+    active_regular = []
+    active_ongoing = []
     dormant = []
     completed = []
+
+    dormant_days_ongoing = config.get("dormant_days_ongoing", 90)
 
     for p in projects:
         if p.status == "completed":
             completed.append(p)
-        elif p.days_since_active() > dormant_days:
-            dormant.append(p)
         else:
-            active.append(p)
+            # Use different dormant thresholds for regular vs ongoing
+            threshold = dormant_days_ongoing if p.project_type == "ongoing" else dormant_days
+
+            if p.days_since_active() > threshold:
+                dormant.append(p)
+            elif p.project_type == "ongoing":
+                active_ongoing.append(p)
+            else:
+                active_regular.append(p)
 
     # Sort by last_active
-    active.sort(key=lambda p: p.last_active, reverse=True)
+    active_regular.sort(key=lambda p: p.last_active, reverse=True)
+    active_ongoing.sort(key=lambda p: p.last_active, reverse=True)
     dormant.sort(key=lambda p: p.last_active, reverse=True)
     completed.sort(key=lambda p: p.last_active, reverse=True)
 
-    # Print active projects
-    if active:
+    # Print active regular projects
+    if active_regular:
         fire = get_icon("fire", use_emojis)
-        console.print(f"\n[bold yellow]{fire} ACTIVE[/bold yellow]", f"({len(active)})")
-        for p in active:
+        console.print(f"\n[bold yellow]{fire} ACTIVE[/bold yellow]", f"({len(active_regular)})")
+        for p in active_regular:
             completion_str = format_completion(p.completion, show_bar=True)
             status_line = f"  [bold]{p.name:<20}[/bold] {completion_str}   {format_date_relative(p.last_active):<15}"
             if p.next_steps:
                 status_line += f"  [dim][{p.next_steps[:30]}][/dim]"
             console.print(status_line)
-    else:
+
+    # Print ongoing long-term projects
+    if active_ongoing:
+        # Use wave emoji for ongoing projects
+        wave = "🌊" if _EMOJI_SUPPORT and use_emojis else "[ONGOING]"
+        console.print(f"\n[bold cyan]{wave} ONGOING[/bold cyan]", f"({len(active_ongoing)})")
+        for p in active_ongoing:
+            completion_str = format_completion(p.completion, show_bar=True)
+            # Show description instead of next_steps for ongoing projects
+            status_line = f"  [bold]{p.name:<20}[/bold] {completion_str}   {format_date_relative(p.last_active):<15}"
+            if p.full_name:
+                status_line += f"  [dim]{p.full_name[:40]}[/dim]"
+            console.print(status_line)
+
+    if not active_regular and not active_ongoing:
         console.print("\n[dim]No active projects[/dim]")
 
     # Print dormant projects
@@ -197,19 +221,26 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
 
     # Print tips/nudges
     if config.get("gentle_nudges"):
-        if active:
+        all_active = active_regular + active_ongoing
+        if all_active:
             # Find nearly done projects
-            nearly_done = [p for p in active if p.completion >= 80]
+            nearly_done = [p for p in all_active if p.completion >= 80]
             if nearly_done:
                 p = nearly_done[0]
                 bulb = get_icon("bulb", use_emojis)
                 console.print(f"\n[bold cyan]{bulb} Tip:[/bold cyan] {p.name} is {p.completion}% done - finish it first?")
 
-        # Warn about too many active projects
+        # Warn about too many active projects (regular only)
         max_active = config.get("max_active_projects", 5)
-        if len(active) > max_active:
+        if len(active_regular) > max_active:
             warn = get_icon("warning", use_emojis)
-            console.print(f"\n[yellow]{warn} You have {len(active)} active projects. Consider completing some before starting new ones.[/yellow]")
+            console.print(f"\n[yellow]{warn} You have {len(active_regular)} active projects. Consider completing some before starting new ones.[/yellow]")
+
+        # Note about ongoing projects if at/near limit
+        max_ongoing = config.get("max_ongoing_projects", 2)
+        if len(active_ongoing) >= max_ongoing:
+            warn = get_icon("warning", use_emojis)
+            console.print(f"\n[yellow]{warn} You have {len(active_ongoing)} ongoing projects. Long-term projects require sustained focus.[/yellow]")
 
     # Project health warnings
     if dormant:
@@ -224,26 +255,27 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
 
     # Command hints (if enabled)
     if config.get("show_command_hints", True):
-        _print_command_hints(active, dormant, completed, use_emojis)
+        _print_command_hints(active_regular, active_ongoing, dormant, completed, use_emojis)
 
     console.print()  # Blank line
 
 
-def _print_command_hints(active: List[Project], dormant: List[Project], completed: List[Project], use_emojis: bool) -> None:
+def _print_command_hints(active_regular: List[Project], active_ongoing: List[Project], dormant: List[Project], completed: List[Project], use_emojis: bool) -> None:
     """Print helpful command suggestions based on current project state."""
     bulb = get_icon("bulb", use_emojis)
 
     hints = []
+    all_active = active_regular + active_ongoing
 
     # Context-specific hints
-    if active:
+    if all_active:
         # Find projects close to completion
-        nearly_done = [p for p in active if p.completion >= 80]
+        nearly_done = [p for p in all_active if p.completion >= 80]
         if nearly_done:
             hints.append(f"jnl done {nearly_done[0].id} - Complete {nearly_done[0].name}")
 
         # Suggest logging work
-        most_recent = max(active, key=lambda p: p.last_active)
+        most_recent = max(all_active, key=lambda p: p.last_active)
         hints.append(f"jnl log \"your update\" - Log work on {most_recent.name}")
 
         # Suggest getting context
@@ -256,7 +288,7 @@ def _print_command_hints(active: List[Project], dormant: List[Project], complete
         if len(dormant) > 2:
             hints.append("jnl archive --dormant - Clean up dormant projects")
 
-    if not active and not dormant:
+    if not all_active and not dormant:
         hints.append("jnl new <name> - Start a new project")
 
     # General hints (always show 1-2)

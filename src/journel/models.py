@@ -19,6 +19,7 @@ class Project:
     last_active: date = field(default_factory=date.today)
     completion: int = 0  # 0-100
     priority: str = "medium"  # low, medium, high
+    project_type: str = "regular"  # regular or ongoing (for long-term projects)
     github: str = ""
     claude_project: str = ""
     next_steps: str = ""
@@ -43,6 +44,7 @@ class Project:
             "last_active": self.last_active.isoformat() if isinstance(self.last_active, date) else self.last_active,
             "completion": self.completion,
             "priority": self.priority,
+            "project_type": self.project_type,
             "github": self.github,
             "claude_project": self.claude_project,
             "next_steps": self.next_steps,
@@ -57,6 +59,9 @@ class Project:
             data["created"] = datetime.fromisoformat(data["created"]).date()
         if isinstance(data.get("last_active"), str):
             data["last_active"] = datetime.fromisoformat(data["last_active"]).date()
+
+        # Backward compatibility: default to "regular" if project_type not set
+        data.setdefault("project_type", "regular")
 
         project = cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
         project.notes = notes

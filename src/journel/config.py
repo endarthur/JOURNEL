@@ -11,11 +11,13 @@ DEFAULT_CONFIG = {
     "editor": os.environ.get("EDITOR", "notepad"),
     "default_view": "status",
     "max_active_projects": 5,
+    "max_ongoing_projects": 2,  # Hard limit for ongoing/long-term projects
     "completion_celebration": True,
     "auto_git_commit": True,
     "gentle_nudges": True,
     "show_command_hints": True,
     "dormant_days": 14,
+    "dormant_days_ongoing": 90,  # Ongoing projects get longer before dormant
     "use_emojis": True,
     # AI Integration settings
     "ai": {
