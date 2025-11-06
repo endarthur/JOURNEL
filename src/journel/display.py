@@ -129,6 +129,10 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
         config: Configuration dict
         active_session: Optional active session to display at top
     """
+    # Get config values early
+    use_emojis = config.get("use_emojis", True)
+    dormant_days = config.get("dormant_days", 14)
+
     # Show active session first if present
     if active_session:
         elapsed = active_session.elapsed_time()
@@ -144,9 +148,6 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
     active = []
     dormant = []
     completed = []
-
-    dormant_days = config.get("dormant_days", 14)
-    use_emojis = config.get("use_emojis", True)
 
     for p in projects:
         if p.status == "completed":
