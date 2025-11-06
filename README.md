@@ -25,6 +25,12 @@ Homage to André Journel (geostatistics pioneer, GSLIB) + Journal (project loggi
 
 ## Installation
 
+### From PyPI (Recommended)
+
+```bash
+pip install journel
+```
+
 ### From Source (Development)
 
 ```bash
