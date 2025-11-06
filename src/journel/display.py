@@ -1,5 +1,6 @@
 """Display and formatting utilities using Rich."""
 
+import sys
 from datetime import date
 from typing import List, Optional
 
@@ -13,7 +14,31 @@ from .models import Project, Session
 from .utils import format_date_relative
 
 
+# Configure console for cross-platform compatibility
 console = Console()
+
+
+def _can_render_emoji() -> bool:
+    """Check if terminal can render emoji.
+
+    Returns False on Windows if the terminal encoding can't handle Unicode.
+    """
+    try:
+        # Check if stdout has proper encoding
+        encoding = getattr(sys.stdout, 'encoding', 'utf-8')
+        if encoding is None:
+            return False
+
+        # Try to encode an emoji
+        test_emoji = "🔥"
+        test_emoji.encode(encoding)
+        return True
+    except (UnicodeEncodeError, AttributeError, LookupError):
+        return False
+
+
+# Auto-detect emoji support
+_EMOJI_SUPPORT = _can_render_emoji()
 
 # Emoji mappings (can be disabled via config)
 EMOJIS = {
@@ -38,8 +63,13 @@ ASCII_FALLBACKS = {
 
 
 def get_icon(name: str, use_emojis: bool = True) -> str:
-    """Get an icon (emoji or ASCII fallback)."""
-    if use_emojis:
+    """Get an icon (emoji or ASCII fallback).
+
+    Automatically uses ASCII if terminal doesn't support emoji,
+    even if use_emojis is True.
+    """
+    # Auto-fallback to ASCII if terminal can't render emoji
+    if use_emojis and _EMOJI_SUPPORT:
         return EMOJIS.get(name, "")
     return ASCII_FALLBACKS.get(name, "")
 
@@ -91,8 +121,25 @@ All files are plain markdown - edit them anytime![/dim]
     console.print(Panel(welcome, border_style="green"))
 
 
-def print_status(projects: List[Project], config) -> None:
-    """Print project status overview."""
+def print_status(projects: List[Project], config, active_session: Optional['Session'] = None) -> None:
+    """Print project status overview.
+
+    Args:
+        projects: List of projects to display
+        config: Configuration dict
+        active_session: Optional active session to display at top
+    """
+    # Show active session first if present
+    if active_session:
+        elapsed = active_session.elapsed_time()
+        hours = elapsed.total_seconds() / 3600
+        # Use simple [TIME] prefix if emojis not supported
+        time_icon = "⏱ " if _EMOJI_SUPPORT and use_emojis else "[TIME] "
+        console.print(f"\n[yellow]{time_icon} Active Session:[/yellow] [bold]{active_session.project_id}[/bold] ({_format_time_duration(elapsed)})")
+        if active_session.task:
+            console.print(f"    Task: {active_session.task}")
+        console.print(f"    [dim]Stop: jnl stop | Pause: jnl pause[/dim]\n")
+
     # Categorize projects
     active = []
     dormant = []

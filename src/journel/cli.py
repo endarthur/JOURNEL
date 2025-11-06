@@ -271,7 +271,47 @@ def get_storage(no_emoji: bool = False) -> Storage:
 def main(ctx, no_emoji, install_completion, show_completion):
     """JOURNEL - ADHD-friendly project organization system.
 
-    Run without arguments to show project status.
+    \b
+    DAILY WORKFLOW:
+      status              Show all projects (default)
+      log MESSAGE         Quick activity logging
+      start PROJECT       Begin tracked session
+      stop                End current session
+      pause               Pause current session
+      continue            Resume paused session
+
+    \b
+    PROJECT MANAGEMENT:
+      new NAME [DESC]     Create new project
+      edit PROJECT        Open project in editor
+      done PROJECT        Mark project as complete
+      list [--filter]     List projects with filters
+      archive PROJECT     Archive completed/dormant project
+      resume PROJECT      Resume archived project
+
+    \b
+    REFLECTION & INSIGHTS:
+      wins                Show achievements and streaks
+      stats               View time and productivity stats
+      ctx [QUESTION]      Export context for AI analysis
+      ask QUESTION        Ask AI for project guidance
+
+    \b
+    AI PAIR PROGRAMMING:
+      ai-log MESSAGE      Log AI-assisted work
+      ai-start PROJECT    Start AI-assisted session
+      ai-stop             End AI session with learning reflection
+
+    \b
+    TOOLS & SETUP:
+      init                Initialize JOURNEL
+      sync                Sync with git remote
+      tui                 Launch interactive browser
+      setup-claude        Setup Claude Code integration
+      link PROJECT URL    Add GitHub/Claude link
+      note MESSAGE        Quick note capture
+
+    Run 'jnl COMMAND --help' for detailed command help.
     """
     # Handle completion installation
     if install_completion:
@@ -409,7 +449,10 @@ def status(ctx, brief):
         active = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 14]
         console.print(f"[JOURNEL: {len(active)} active projects]")
     else:
-        print_status(projects, config)
+        # Check for active session
+        session_manager = SessionManager.get_instance(storage)
+        active_session = session_manager.get_active_session()
+        print_status(projects, config, active_session=active_session)
 
 
 @main.command()
@@ -493,6 +536,21 @@ def log(project_or_message, message, hours):
             console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold] [dim](parsed from message)[/dim]")
         else:
             console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold]")
+
+    # Contextual hints
+    if project:
+        # Check if session is active
+        from .display import get_icon
+        session_manager = SessionManager.get_instance(storage)
+        active_session = session_manager.get_active_session()
+        use_emojis = storage.config.get("use_emojis", True)
+
+        if not active_session:
+            tip = get_icon("bulb", use_emojis)
+            console.print(f"\n[dim]{tip} Track time? -> jnl start {project}[/dim]")
+        elif active_session.project_id != project:
+            warn = get_icon("warning", use_emojis)
+            console.print(f"\n[dim]{warn} Active session on {active_session.project_id}. Switch? -> jnl stop && jnl start {project}[/dim]")
 
 
 @main.command()
