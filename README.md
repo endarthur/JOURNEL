@@ -1,8 +1,14 @@
 # JOURNEL
 
+![Status](https://img.shields.io/badge/status-active%20development-orange)
+![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+
 **JOURNEL** is an ADHD-friendly project organization and tracking system designed to help maintain focus, restore context, and celebrate completion.
 
-## Name Origin
+> ⚠️ **Active Development Notice**: JOURNEL is in active development. Features and commands may change. The TUI interface is experimental. If you're trying it out, please report any issues!
+
+## Why JOURNEL?
 
 Homage to André Journel (geostatistics pioneer, GSLIB) + Journal (project logging)
 
@@ -223,9 +229,38 @@ JOURNEL is an **accountability buddy**, not just an organization tool.
 - ❌ Not an IDE integration (stays simple)
 - ❌ Not multi-user (personal tool only)
 
-## Author
+## Development
 
-Arthur Endlein (endarthur@gmail.com)
+JOURNEL was developed with the assistance of Claude Code (Sonnet 4.5) through collaborative pair programming. The AI integration features (`jnl ctx`, `jnl ask`, AI session tracking) were built alongside the tool itself - practicing the same AI-assisted workflow that JOURNEL helps users track.
+
+This transparency is intentional: JOURNEL is designed to work *with* AI assistants, not hide them. The project serves as both a practical tool and a demonstration of effective AI-human collaboration in software development.
+
+## Contributing
+
+Contributions are welcome! JOURNEL is in active development and feedback is highly valued.
+
+- **Bug reports**: Please open an issue with details about your environment and steps to reproduce
+- **Feature requests**: Open an issue to discuss the idea first
+- **Pull requests**: For major changes, please open an issue first to discuss what you'd like to change
+- **Documentation**: Improvements to docs, examples, and guides are always appreciated
+
+## Roadmap
+
+Current focus areas:
+
+- **Core stability** - Refining the CLI commands and data model
+- **TUI refinement** - The interactive interface is experimental and needs polish
+- **AI integration** - Expanding Claude Code integration and LLM context features
+- **Testing** - Adding comprehensive test coverage
+- **Documentation** - More examples, guides, and use cases
+
+See the [issues](https://github.com/endarthur/journel/issues) for specific planned features and known bugs.
+
+## Authors
+
+**Arthur Endlein** (endarthur@gmail.com) - Creator and maintainer
+
+**Claude Code (Sonnet 4.5)** - AI pair programming partner
 
 ## License
 
