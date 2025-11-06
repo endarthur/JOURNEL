@@ -287,16 +287,16 @@ class JournelTUI(App):
             else:
                 msg = f"[dim]No {self.current_filter} projects.\n\nPress [cyan]*[/cyan] to see all projects.[/dim]"
 
-            # Use Label directly, not wrapped in ListItem (no ID needed - prevents duplicates)
-            label = Label(msg)
-            list_view.mount(label)
+            # Wrap Label in ListItem to satisfy ListView's assertion that all children are ListItems
+            empty_item = ListItem(Label(msg))
+            list_view.append(empty_item)
         else:
             for project in self.projects:
                 list_view.append(ProjectListItem(project))
 
     @on(ListView.Selected)
     def on_list_selected(self, event: ListView.Selected) -> None:
-        """Handle project selection."""
+        """Handle project selection (Enter key or click)."""
         # Get detail widget
         detail = self.query_one("#project-detail", ProjectDetail)
 
@@ -308,6 +308,23 @@ class JournelTUI(App):
             return
 
         # Set selected project
+        self.selected_project = event.item.project
+        detail.set_project(self.selected_project)
+
+    @on(ListView.Highlighted)
+    def on_list_highlighted(self, event: ListView.Highlighted) -> None:
+        """Handle project navigation (arrow keys / j/k)."""
+        # Get detail widget
+        detail = self.query_one("#project-detail", ProjectDetail)
+
+        # Only handle ProjectListItem highlights
+        if event.item is None or not isinstance(event.item, ProjectListItem):
+            # Clear for invalid items (like empty state)
+            self.selected_project = None
+            detail.set_project(None)
+            return
+
+        # Update selected project as user navigates
         self.selected_project = event.item.project
         detail.set_project(self.selected_project)
 
