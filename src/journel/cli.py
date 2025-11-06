@@ -1088,7 +1088,7 @@ def tui(ctx):
     """Launch interactive Terminal UI for browsing projects.
 
     Navigate with arrow keys or vim keys (j/k).
-    Press ? or F1 for help.
+    Press ? for help.
     """
     no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
     storage = get_storage(no_emoji)
@@ -1099,8 +1099,7 @@ def tui(ctx):
     except ImportError:
         print_error("TUI requires 'textual' library")
         print_info("Install with: pip install textual")
-    except Exception as e:
-        print_error(f"Failed to launch TUI: {e}")
+        sys.exit(1)
 
 
 # Session tracking commands
@@ -1573,9 +1572,7 @@ def tui_main():
         from .display import print_error, print_info
         print_error("TUI requires 'textual' library")
         print_info("Install with: pip install textual")
-    except Exception as e:
-        from .display import print_error
-        print_error(f"Failed to launch TUI: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -89,20 +89,21 @@ class JournelTUI(App):
 
     CSS = """
     Screen {
-        layout: grid;
-        grid-size: 2 1;
-        grid-columns: 1fr 2fr;
+        layout: vertical;
+    }
+
+    #main-container {
+        layout: horizontal;
+        height: 100%;
     }
 
     #left-panel {
-        width: 100%;
-        height: 100%;
+        width: 35%;
         border: solid $primary;
     }
 
     #right-panel {
-        width: 100%;
-        height: 100%;
+        width: 65%;
         border: solid $secondary;
         padding: 1 2;
     }
@@ -111,8 +112,21 @@ class JournelTUI(App):
         height: 100%;
     }
 
+    ListView:focus {
+        border: solid $accent;
+    }
+
     ListItem {
         padding: 0 1;
+    }
+
+    ListItem:hover {
+        background: $boost;
+    }
+
+    ListItem.-selected {
+        background: $primary;
+        text-style: bold;
     }
 
     #status-bar {
@@ -122,18 +136,24 @@ class JournelTUI(App):
         color: $text;
         padding: 0 1;
     }
+
+    #empty-state {
+        padding: 2 1;
+        text-align: center;
+    }
     """
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("f1", "filter_active", "Active"),
-        Binding("f2", "filter_dormant", "Dormant"),
-        Binding("f3", "filter_completed", "Completed"),
-        Binding("f4", "filter_archived", "Archived"),
-        Binding("f5", "filter_all", "All"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("d", "mark_done", "Done"),
-        Binding("a", "archive_project", "Archive"),
+        Binding("q", "quit", "Quit", key_display="Q"),
+        Binding("a", "filter_active", "Active", key_display="A"),
+        Binding("d", "filter_dormant", "Dormant", key_display="D"),
+        Binding("c", "filter_completed", "Completed", key_display="C"),
+        Binding("x", "filter_archived", "Archived", key_display="X"),
+        Binding("asterisk", "filter_all", "All", key_display="*"),
+        Binding("r", "refresh", "Refresh", key_display="R"),
+        Binding("question_mark", "show_help", "Help", key_display="?"),
+        Binding("enter", "complete_project", "Complete"),
+        Binding("backspace", "archive_project", "Archive"),
         Binding("u", "unarchive_project", "Unarchive"),
         Binding("e", "edit_project", "Edit"),
     ]
@@ -150,14 +170,14 @@ class JournelTUI(App):
         """Create child widgets."""
         yield Header()
 
-        with Horizontal():
+        with Horizontal(id="main-container"):
             with Vertical(id="left-panel"):
                 yield ListView(id="project-list")
 
             with Vertical(id="right-panel"):
                 yield ProjectDetail(id="project-detail")
 
-        yield Static("F1: Active | F2: Dormant | F3: Completed | F4: Archived | F5: All | R: Refresh | Q: Quit", id="status-bar")
+        yield Static("A:Active | D:Dormant | C:Completed | X:Archived | *:All | R:Refresh | ?:Help | Q:Quit", id="status-bar")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -197,7 +217,15 @@ class JournelTUI(App):
         list_view.clear()
 
         if not self.projects:
-            list_view.append(ListItem(Static("[dim]No projects found[/dim]")))
+            # Provide helpful empty state based on filter
+            if self.current_filter == "all":
+                msg = "[dim]No projects yet.\n\nCreate one with:[/dim]\n[cyan]jnl new my-project[/cyan]"
+            else:
+                msg = f"[dim]No {self.current_filter} projects.\n\nPress [cyan]*[/cyan] to see all projects.[/dim]"
+
+            # Use Label directly, not wrapped in ListItem
+            label = Label(msg, id="empty-state")
+            list_view.mount(label)
         else:
             for project in self.projects:
                 list_view.append(ProjectListItem(project))
@@ -205,10 +233,19 @@ class JournelTUI(App):
     @on(ListView.Selected)
     def on_list_selected(self, event: ListView.Selected) -> None:
         """Handle project selection."""
-        if isinstance(event.item, ProjectListItem):
-            self.selected_project = event.item.project
-            detail = self.query_one("#project-detail", ProjectDetail)
-            detail.set_project(self.selected_project)
+        # Get detail widget
+        detail = self.query_one("#project-detail", ProjectDetail)
+
+        # Only handle ProjectListItem selections
+        if not isinstance(event.item, ProjectListItem):
+            # Clear selection for invalid items (like empty state)
+            self.selected_project = None
+            detail.set_project(None)
+            return
+
+        # Set selected project
+        self.selected_project = event.item.project
+        detail.set_project(self.selected_project)
 
     def action_filter_active(self) -> None:
         """Filter to show only active projects."""
@@ -245,54 +282,82 @@ class JournelTUI(App):
         self.load_projects()
         self.notify("Projects refreshed")
 
-    def action_mark_done(self) -> None:
-        """Mark selected project as done."""
-        if self.selected_project:
-            if self.selected_project.status == "completed":
-                self.notify("Project is already completed", severity="warning")
-                return
+    def action_show_help(self) -> None:
+        """Show help information."""
+        help_text = """[bold]JOURNEL TUI - Keyboard Shortcuts[/bold]
 
-            # Mark as complete
-            self.selected_project.status = "completed"
-            self.selected_project.completion = 100
-            self.selected_project.last_active = date.today()
-            self.storage.move_to_completed(self.selected_project)
-            self.storage.update_project_index()
+[cyan]Filters:[/cyan]
+  A - Active projects
+  D - Dormant projects
+  C - Completed projects
+  X - Archived projects
+  * - All projects
 
-            self.notify(f"✓ Completed: {self.selected_project.name}", severity="information")
-            self.action_refresh()
-        else:
+[cyan]Actions:[/cyan]
+  Enter     - Mark project as completed
+  Backspace - Archive project
+  U         - Unarchive project
+  E         - Edit project (opens in external editor)
+
+[cyan]Navigation:[/cyan]
+  ↑/↓ or j/k - Move selection up/down
+  R          - Refresh project list
+  Q          - Quit
+
+[dim]Press any key to close this help...[/dim]"""
+        self.notify(help_text, timeout=15)
+
+    def action_complete_project(self) -> None:
+        """Mark selected project as completed."""
+        if not self.selected_project:
             self.notify("No project selected", severity="warning")
+            return
+
+        if self.selected_project.status == "completed":
+            self.notify("Project is already completed", severity="warning")
+            return
+
+        # Mark as complete
+        self.selected_project.status = "completed"
+        self.selected_project.completion = 100
+        self.selected_project.last_active = date.today()
+        self.storage.move_to_completed(self.selected_project)
+        self.storage.update_project_index()
+
+        self.notify(f"✓ Completed: {self.selected_project.name}", severity="information")
+        self.action_refresh()
 
     def action_archive_project(self) -> None:
         """Archive the selected project."""
-        if self.selected_project:
-            if self.selected_project.status == "archived":
-                self.notify("Project is already archived", severity="warning")
-                return
-
-            self.storage.move_to_archived(self.selected_project)
-            self.storage.update_project_index()
-
-            self.notify(f"📦 Archived: {self.selected_project.name}", severity="information")
-            self.action_refresh()
-        else:
+        if not self.selected_project:
             self.notify("No project selected", severity="warning")
+            return
+
+        if self.selected_project.status == "archived":
+            self.notify("Project is already archived", severity="warning")
+            return
+
+        self.storage.move_to_archived(self.selected_project)
+        self.storage.update_project_index()
+
+        self.notify(f"📦 Archived: {self.selected_project.name}", severity="information")
+        self.action_refresh()
 
     def action_unarchive_project(self) -> None:
         """Unarchive the selected project."""
-        if self.selected_project:
-            if self.selected_project.status != "archived":
-                self.notify("Project is not archived", severity="warning")
-                return
-
-            self.storage.unarchive_project(self.selected_project)
-            self.storage.update_project_index()
-
-            self.notify(f"▶ Unarchived: {self.selected_project.name}", severity="information")
-            self.action_refresh()
-        else:
+        if not self.selected_project:
             self.notify("No project selected", severity="warning")
+            return
+
+        if self.selected_project.status != "archived":
+            self.notify("Project is not archived", severity="warning")
+            return
+
+        self.storage.unarchive_project(self.selected_project)
+        self.storage.update_project_index()
+
+        self.notify(f"▶ Unarchived: {self.selected_project.name}", severity="information")
+        self.action_refresh()
 
     def action_edit_project(self) -> None:
         """Edit the selected project."""
@@ -303,6 +368,32 @@ class JournelTUI(App):
 
 
 def run_tui(storage: Storage) -> None:
-    """Run the TUI application."""
+    """Run the TUI application with error handling and terminal recovery."""
+    import sys
+    import traceback
+
     app = JournelTUI(storage)
-    app.run()
+
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        # Clean exit on Ctrl+C
+        pass
+    except Exception as e:
+        # Ensure terminal is restored on crash
+        try:
+            # Force terminal reset sequences
+            sys.stdout.write('\033[?1049l')  # Exit alternate screen
+            sys.stdout.write('\033[?25h')     # Show cursor
+            sys.stdout.write('\033[0m')       # Reset colors
+            sys.stdout.flush()
+        except Exception:
+            pass  # If stdout is broken, nothing we can do
+
+        # Print error information
+        print(f"\n❌ TUI Error: {e}", file=sys.stderr)
+        print("\n📋 Full traceback:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        print("\n💡 If your terminal is broken, try running: reset", file=sys.stderr)
+        print("💡 Please report this issue at: https://github.com/yourusername/JOURNEL/issues\n", file=sys.stderr)
+        sys.exit(1)
