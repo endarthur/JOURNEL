@@ -17,6 +17,14 @@ DEFAULT_CONFIG = {
     "show_command_hints": True,
     "dormant_days": 14,
     "use_emojis": True,
+    # AI Integration settings
+    "ai": {
+        "enabled": True,  # Allow AI commands
+        "default_agent": "claude-code",  # Default AI agent name
+        "show_agent_attribution": True,  # Show agent name in logs/sessions
+        "learning_prompts": True,  # Use learning-focused prompts in ai-stop
+        "color_scheme": "magenta",  # Visual color for AI entries (magenta/cyan/yellow)
+    },
 }
 
 

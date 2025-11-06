@@ -368,8 +368,15 @@ def _format_time_duration(elapsed) -> str:
 
 def print_session_started(session: Session, project: Project) -> None:
     """Print message when session starts."""
-    console.print(f"\n[bold green]>> SESSION STARTED[/bold green]\n")
-    console.print(f"[bold]{project.name}[/bold]")
+    # Use magenta color for AI-assisted sessions
+    if session.ai_assisted:
+        console.print(f"\n[bold magenta]>> [AI] SESSION STARTED[/bold magenta]\n")
+        console.print(f"[bold magenta]{project.name}[/bold magenta]")
+        if session.agent:
+            console.print(f"[dim]Agent: {session.agent}[/dim]")
+    else:
+        console.print(f"\n[bold green]>> SESSION STARTED[/bold green]\n")
+        console.print(f"[bold]{project.name}[/bold]")
 
     if session.task:
         console.print(f"Task: {session.task}")
@@ -396,10 +403,17 @@ def print_session_stopped(session: Session, project: Optional[Project]) -> None:
     elapsed = session.elapsed_time()
     hours = elapsed.total_seconds() / 3600
 
-    console.print(f"\n[bold green][DONE] SESSION COMPLETE[/bold green]\n")
-
-    if project:
-        console.print(f"[bold]{project.name}[/bold]")
+    # Use magenta color for AI-assisted sessions
+    if session.ai_assisted:
+        console.print(f"\n[bold magenta][DONE] [AI] SESSION COMPLETE[/bold magenta]\n")
+        if project:
+            console.print(f"[bold magenta]{project.name}[/bold magenta]")
+        if session.agent:
+            console.print(f"[dim]Agent: {session.agent}[/dim]")
+    else:
+        console.print(f"\n[bold green][DONE] SESSION COMPLETE[/bold green]\n")
+        if project:
+            console.print(f"[bold]{project.name}[/bold]")
 
     console.print(f"Duration: {_format_time_duration(elapsed)} ({hours:.1f}h)")
 
@@ -423,10 +437,17 @@ def print_session_paused(session: Session, project: Optional[Project]) -> None:
     """Print message when session is paused."""
     elapsed = session.elapsed_time()
 
-    console.print(f"\n[bold yellow][PAUSE] SESSION PAUSED[/bold yellow]\n")
-
-    if project:
-        console.print(f"[bold]{project.name}[/bold]")
+    # Use magenta color for AI-assisted sessions
+    if session.ai_assisted:
+        console.print(f"\n[bold magenta][PAUSE] [AI] SESSION PAUSED[/bold magenta]\n")
+        if project:
+            console.print(f"[bold magenta]{project.name}[/bold magenta]")
+        if session.agent:
+            console.print(f"[dim]Agent: {session.agent}[/dim]")
+    else:
+        console.print(f"\n[bold yellow][PAUSE] SESSION PAUSED[/bold yellow]\n")
+        if project:
+            console.print(f"[bold]{project.name}[/bold]")
 
     console.print(f"Active time: {_format_time_duration(elapsed)}")
 
@@ -440,10 +461,17 @@ def print_session_resumed(session: Session, project: Optional[Project]) -> None:
     """Print message when session resumes."""
     elapsed = session.elapsed_time()
 
-    console.print(f"\n[bold green]>> SESSION RESUMED[/bold green]\n")
-
-    if project:
-        console.print(f"[bold]{project.name}[/bold]")
+    # Use magenta color for AI-assisted sessions
+    if session.ai_assisted:
+        console.print(f"\n[bold magenta]>> [AI] SESSION RESUMED[/bold magenta]\n")
+        if project:
+            console.print(f"[bold magenta]{project.name}[/bold magenta]")
+        if session.agent:
+            console.print(f"[dim]Agent: {session.agent}[/dim]")
+    else:
+        console.print(f"\n[bold green]>> SESSION RESUMED[/bold green]\n")
+        if project:
+            console.print(f"[bold]{project.name}[/bold]")
 
     console.print(f"Previous time: {_format_time_duration(elapsed)}")
 

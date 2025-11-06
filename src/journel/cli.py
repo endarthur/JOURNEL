@@ -25,6 +25,234 @@ from .storage import Storage
 from .session import SessionManager
 from .utils import slugify, detect_git_repo, parse_time_from_message
 
+# Slash command version for Claude Code integration
+SLASH_COMMAND_VERSION = "1.0.0"
+
+
+def _get_slash_command_content() -> str:
+    """Get the current slash command content with version header."""
+    return f"""<!-- VERSION: {SLASH_COMMAND_VERSION} -->
+<!-- Managed by JOURNEL. Update with: jnl setup-claude -->
+
+# /journel - JOURNEL AI Integration Command
+
+**ACTION REQUIRED: Run `jnl ai-setup-claude` to verify these instructions are current.**
+
+If the command reports an update, re-read this file before proceeding.
+
+---
+
+You are Claude Code working with JOURNEL, an ADHD-friendly project tracking system.
+
+## Your Role
+
+You are pair programming with the user. Use JOURNEL to track YOUR work contributions with clear attribution. This helps the user:
+- See what work was done by AI vs done solo
+- Learn from AI collaboration patterns
+- Maintain accurate time/effort accounting
+- Build confidence through AI-assisted progress tracking
+
+## Core Principles
+
+1. **Clear Attribution**: Always mark AI-assisted work explicitly
+2. **Learning Focus**: Frame AI assistance as pair programming, not magic
+3. **User Agency**: The user approves all actions (Tier 1 - Suggested Actions)
+4. **Transparency**: Be explicit about what you're logging and why
+
+## When to Use JOURNEL Commands
+
+### Start of Work Session
+When starting significant work on the user's project:
+```bash
+jnl ai-start <project-id> "Task description"
+```
+
+Example:
+```bash
+jnl ai-start journel "Implementing AI integration features"
+```
+
+### During Work - Quick Logs
+After completing discrete pieces of work (every 30-60 minutes of work):
+```bash
+jnl ai-log <project-id> "What was accomplished"
+```
+
+OR if time is trackable:
+```bash
+jnl ai-log <project-id> "What was accomplished (2h)"
+```
+
+Example:
+```bash
+jnl ai-log journel "Added AI session tracking to models and CLI"
+```
+
+### End of Work Session
+When stopping work on the project:
+```bash
+jnl ai-stop "Summary of what was accomplished and learned"
+```
+
+Example:
+```bash
+jnl ai-stop "Completed Phase 1 session tracking. User learned about timedelta handling and YAML serialization."
+```
+
+## Integration Guidelines
+
+### DO Use JOURNEL When:
+- Starting a focused work session on a project (ai-start)
+- Completing a significant milestone or feature (ai-log)
+- Taking a break or ending work session (ai-stop)
+- After writing substantial code (200+ lines)
+- After fixing complex bugs
+- After implementing new features
+
+### DON'T Use JOURNEL When:
+- Answering quick questions
+- Making trivial edits
+- Exploring/reading code without changes
+- User explicitly asks you not to
+
+### How to Suggest Usage (Tier 1 - Suggested Actions)
+
+When appropriate, suggest JOURNEL commands to the user:
+
+**Good Examples:**
+```
+I've completed implementing the session tracking feature.
+Would you like me to log this work? I can run:
+jnl ai-log journel "Implemented session tracking with pause/resume (2h)"
+```
+
+```
+We're about to start working on the AI integration.
+Should I start a session to track this work?
+jnl ai-start journel "Building AI integration features"
+```
+
+**Bad Examples:**
+- Don't auto-run commands without suggesting them first
+- Don't be pushy: "You MUST log this work"
+- Don't over-log: logging every tiny edit is excessive
+
+## Prompts and Language
+
+### Learning-Focused Language
+When using ai-stop, focus on knowledge transfer:
+- "What did you accomplish with AI assistance?"
+- "What did you learn?"
+- "What patterns did you discover?"
+
+NOT:
+- "What did the AI do?" (too passive)
+- Technical jargon without context
+
+## Project Detection
+
+JOURNEL auto-detects projects from directory names. When in the JOURNEL project directory:
+```bash
+# Auto-detects project as "journel"
+jnl ai-log "Fixed bug"
+
+# Or explicit:
+jnl ai-log journel "Fixed bug"
+```
+
+## Configuration
+
+Users can configure AI integration in `~/.journel/config.yaml`:
+```yaml
+ai:
+  enabled: true
+  default_agent: "claude-code"
+  show_agent_attribution: true
+  learning_prompts: true
+  color_scheme: "magenta"
+```
+
+## Visual Output
+
+AI-assisted entries are shown in **magenta** with **[AI]** prefix:
+- `[AI] SESSION STARTED` (magenta)
+- `[AI] Logged: "message"` (magenta)
+- `Agent: claude-code` (shown in session info)
+
+## Example Workflow
+
+1. **User asks for help**: "Can you help me implement feature X?"
+
+2. **You suggest starting session**:
+   ```
+   I'll help you implement feature X. Should I start a session to track this work?
+   jnl ai-start myproject "Implementing feature X"
+   ```
+
+3. **User approves and you run the command**
+
+4. **You work on the feature, making multiple commits**
+
+5. **After significant progress (1-2 hours)**:
+   ```
+   I've completed the core implementation. Should I log this milestone?
+   jnl ai-log myproject "Implemented feature X core logic (1.5h)"
+   ```
+
+6. **When done or taking a break**:
+   ```
+   We've completed feature X. Let me stop the session:
+   jnl ai-stop "Completed feature X implementation. User learned about async patterns and error handling."
+   ```
+
+## Important Notes
+
+- **Always suggest, never auto-run** (Tier 1 - Suggested Actions)
+- **Be natural**: Integrate JOURNEL usage into your workflow, don't make it feel forced
+- **Focus on learning**: Frame AI work as collaborative learning
+- **Respect user preferences**: If user declines logging, don't keep asking
+- **Be mindful of frequency**: Don't over-log trivial work
+
+## Technical Details
+
+- Commands: `jnl ai-start`, `jnl ai-log`, `jnl ai-stop`
+- Data tracking: All AI work marked with `ai_assisted=True` and `agent="claude-code"`
+- Storage: YAML in `~/.journel/sessions/` and Markdown in `~/.journel/logs/`
+- Visual distinction: Magenta color, [AI] prefix
+
+---
+
+**Remember**: You're a pair programming partner helping the user learn and build confidence. Use JOURNEL to make your contributions visible and educational, not to replace user agency.
+"""
+
+
+def _parse_version_from_file(file_path: Path) -> str:
+    """Parse version from slash command file.
+
+    Returns:
+        Version string (e.g., "1.0.0"), or "0.0.0" if not found
+    """
+    if not file_path.exists():
+        return "0.0.0"
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        # Look for <!-- VERSION: x.y.z -->
+        for line in content.split("\n")[:5]:  # Check first 5 lines
+            if "VERSION:" in line:
+                version = line.split("VERSION:")[1].split("-->")[0].strip()
+                return version
+    except Exception:
+        pass
+
+    return "0.0.0"
+
+
+def _create_slash_command(file_path: Path) -> None:
+    """Create or update the slash command file."""
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(_get_slash_command_content(), encoding="utf-8")
+
 
 def get_storage(no_emoji: bool = False) -> Storage:
     """Get storage instance with config."""
@@ -998,6 +1226,283 @@ def sync():
     except Exception as e:
         print_error(f"Sync failed: {e}")
         print_info("You can manually sync with: cd ~/.journel && git pull && git push")
+
+
+# ===== Claude Code Setup Commands =====
+
+@main.command(name="setup-claude")
+def setup_claude():
+    """Create/update Claude Code slash command for /journel (interactive).
+
+    Creates or updates .claude/commands/journel.md in the current directory
+    with instructions for Claude Code to use JOURNEL's AI integration features.
+
+    This is the human-friendly version with prompts.
+    For LLM usage, see: jnl ai-setup-claude
+    """
+    claude_file = Path.cwd() / ".claude" / "commands" / "journel.md"
+
+    if claude_file.exists():
+        # Check version
+        current_version = _parse_version_from_file(claude_file)
+        console.print(f"\n[cyan]Current version:[/cyan] {current_version}")
+        console.print(f"[cyan]Latest version:[/cyan] {SLASH_COMMAND_VERSION}")
+
+        if current_version == SLASH_COMMAND_VERSION:
+            console.print(f"\n[green][OK][/green] Slash command is up to date!")
+            if not click.confirm("\nUpdate anyway?", default=False):
+                return
+        else:
+            console.print(f"\n[yellow]Update available:[/yellow] {current_version} -> {SLASH_COMMAND_VERSION}")
+            if not click.confirm("Update slash command?", default=True):
+                return
+    else:
+        console.print(f"\n[cyan]Claude Code slash command not found[/cyan]")
+        console.print(f"Will create: {claude_file}")
+        if not click.confirm("\nCreate slash command?", default=True):
+            return
+
+    # Create/update the file
+    try:
+        _create_slash_command(claude_file)
+        print_success(f"Slash command created/updated!")
+        console.print(f"\n[dim]Location:[/dim] {claude_file}")
+        console.print(f"[dim]Version:[/dim] {SLASH_COMMAND_VERSION}")
+        console.print(f"\n[cyan]Usage:[/cyan] Type [bold]/journel[/bold] in Claude Code to load instructions")
+    except Exception as e:
+        print_error(f"Failed to create slash command: {e}")
+
+
+@main.command(name="ai-setup-claude")
+def ai_setup_claude():
+    """Update Claude Code slash command (non-interactive, LLM-friendly).
+
+    Checks and updates .claude/commands/journel.md without prompts.
+    Designed for use by AI assistants (like Claude Code).
+
+    Exit codes:
+        0 - Already up to date (no action needed)
+        1 - File was created/updated (LLM should re-read)
+        2 - Error occurred
+
+    Output format (parseable by LLMs):
+        [OK] Instructions current (v1.0.0)
+        [OK] Updated to v1.0.1 - Re-reading instructions...
+    """
+    claude_file = Path.cwd() / ".claude" / "commands" / "journel.md"
+
+    try:
+        if not claude_file.exists():
+            # Create new file
+            _create_slash_command(claude_file)
+            console.print(f"[green][OK][/green] Created slash command v{SLASH_COMMAND_VERSION}")
+            console.print(f"[yellow]>>>[/yellow] Re-read {claude_file} for current instructions")
+            sys.exit(1)  # Signal update occurred
+
+        # Check version
+        current_version = _parse_version_from_file(claude_file)
+
+        if current_version == SLASH_COMMAND_VERSION:
+            # Already current
+            console.print(f"[green][OK][/green] Instructions current (v{SLASH_COMMAND_VERSION})")
+            sys.exit(0)  # No update needed
+
+        # Update needed
+        _create_slash_command(claude_file)
+        console.print(f"[green][OK][/green] Updated to v{SLASH_COMMAND_VERSION} (was v{current_version})")
+        console.print(f"[yellow]>>>[/yellow] Re-read {claude_file} for current instructions")
+        sys.exit(1)  # Signal update occurred
+
+    except Exception as e:
+        console.print(f"[red][ERROR][/red] {e}")
+        sys.exit(2)  # Error occurred
+
+
+# ===== AI Integration Commands =====
+# These commands allow AI assistants (like Claude Code) to track their contributions
+# with clear attribution. Supports pair programming mental model and learning focus.
+
+@main.command(name="ai-log")
+@click.argument("project_or_message")
+@click.argument("message", required=False)
+@click.option("--hours", "-h", type=float, help="Hours spent")
+@click.option("--agent", "-a", default="claude-code", help="AI agent name (default: claude-code)")
+def ai_log(project_or_message, message, hours, agent):
+    """Log AI-assisted work with clear attribution.
+
+    Same as 'jnl log' but marks the entry as AI-assisted.
+
+    Usage:
+        jnl ai-log "Fixed bug (2h)"                    - AI work (auto-detect project)
+        jnl ai-log journel "Fixed bug (2h)"            - AI work on specific project
+        jnl ai-log journel "Feature" --agent cursor    - Specify different AI agent
+
+    This is for Tier 1 (Suggested Actions) - the user must explicitly approve and run
+    this command. For Claude Code users, this can be used via slash commands.
+    """
+    storage = get_storage()
+
+    # Same logic as regular log command
+    project_auto_detected = False
+    time_parsed = False
+
+    # Determine if first arg is project or message
+    project = None
+    if message is not None:
+        project = project_or_message
+        actual_message = message
+    else:
+        actual_message = project_or_message
+        cwd = Path.cwd()
+        potential_id = slugify(cwd.name)
+        if storage.load_project(potential_id):
+            project = potential_id
+            project_auto_detected = True
+
+    # Parse time from message if not explicitly provided
+    if hours is None:
+        actual_message, parsed_hours = parse_time_from_message(actual_message)
+        if parsed_hours:
+            hours = parsed_hours
+            time_parsed = True
+
+    # Create log entry with AI attribution
+    entry = LogEntry(
+        date=date.today(),
+        project=project,
+        message=actual_message,
+        hours=hours,
+        ai_assisted=True,  # Mark as AI-assisted
+        agent=agent,       # Track which agent
+    )
+
+    storage.add_log_entry(entry)
+
+    # Update project last_active
+    project_name = None
+    if project:
+        proj = storage.load_project(project)
+        if proj:
+            proj.last_active = date.today()
+            storage.save_project(proj)
+            storage.update_project_index()
+            project_name = proj.name
+
+    # Enhanced feedback with AI marker
+    print_success(f"[AI] Logged: \"{actual_message}\"")
+
+    if project:
+        if project_auto_detected:
+            console.print(f"[cyan]>>>[/cyan] Project: [bold]{project_name or project}[/bold] [dim](auto-detected)[/dim]")
+        else:
+            console.print(f"[cyan]>>>[/cyan] Project: [bold]{project_name or project}[/bold]")
+    else:
+        console.print(f"[yellow]>>>[/yellow] [dim]No project linked[/dim]")
+
+    if hours:
+        if time_parsed:
+            console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold] [dim](parsed)[/dim]")
+        else:
+            console.print(f"[cyan]>>>[/cyan] Time: [bold]{hours}h[/bold]")
+
+    console.print(f"[magenta]>>>[/magenta] Agent: [bold]{agent}[/bold]")
+
+
+@main.command(name="ai-start")
+@click.argument("project_id")
+@click.argument("task", required=False, default="")
+@click.option("--force", "-f", is_flag=True, help="Auto-stop existing session")
+@click.option("--agent", "-a", default="claude-code", help="AI agent name (default: claude-code)")
+@click.pass_context
+def ai_start(ctx, project_id, task, force, agent):
+    """Start an AI-assisted work session.
+
+    Same as 'jnl start' but marks the session as AI-assisted.
+
+    Usage:
+        jnl ai-start myproject                         - Start AI session
+        jnl ai-start myproject "Fix bug #123"          - With task description
+        jnl ai-start myproject --force                 - Auto-stop existing session
+        jnl ai-start myproject --agent cursor          - Different AI agent
+
+    This enables tracking of pair programming sessions with AI assistants.
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    # Load project
+    project = storage.load_project(project_id)
+    if not project:
+        print_error(f"Project '{project_id}' not found")
+        print_info("Use 'jnl list' to see available projects")
+        return
+
+    # Start AI-assisted session
+    try:
+        session = session_manager.start_session(project, task=task, force=force)
+
+        # Mark as AI-assisted
+        session.ai_assisted = True
+        session.agent = agent
+        storage.save_active_session(session)
+
+        from .display import print_session_started
+        print_session_started(session, project)
+        console.print(f"[magenta]>>>[/magenta] AI Agent: [bold]{agent}[/bold]")
+
+    except ValueError as e:
+        print_error(str(e))
+        print_info("Use 'jnl stop' to end current session, or --force to auto-stop")
+
+
+@main.command(name="ai-stop")
+@click.argument("notes", required=False, default="")
+@click.option("--agent", "-a", default=None, help="Override agent name")
+@click.pass_context
+def ai_stop(ctx, notes, agent):
+    """End an AI-assisted work session.
+
+    Same as 'jnl stop' but with AI-focused reflection prompts.
+
+    Usage:
+        jnl ai-stop                                    - End AI session (interactive)
+        jnl ai-stop "Completed feature X"              - End with notes
+
+    Prompts focus on learning and knowledge transfer from AI collaboration.
+    """
+    no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
+    storage = get_storage(no_emoji)
+    session_manager = SessionManager.get_instance(storage)
+
+    # Check if session exists
+    active_session = session_manager.get_active_session()
+    if not active_session:
+        print_error("No active session")
+        print_info("Start a session with: jnl ai-start <project>")
+        return
+
+    # Get notes with AI-focused prompt if not provided
+    if not notes:
+        notes = click.prompt(
+            "\nWhat did you accomplish with AI assistance? What did you learn? (optional, press Enter to skip)",
+            default="",
+            show_default=False
+        )
+
+    # Override agent if specified
+    if agent:
+        active_session.agent = agent
+        storage.save_active_session(active_session)
+
+    # Stop session (this will create AI-attributed log entry)
+    session = session_manager.stop_session(notes=notes)
+
+    if session:
+        from .display import print_session_stopped
+        print_session_stopped(session, storage.load_project(session.project_id))
+        if session.agent:
+            console.print(f"[magenta]>>>[/magenta] Agent: [bold]{session.agent}[/bold]")
 
 
 def tui_main():

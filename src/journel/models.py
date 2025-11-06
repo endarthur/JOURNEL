@@ -79,16 +79,23 @@ class LogEntry:
     project: Optional[str]
     message: str
     hours: Optional[float] = None
+    ai_assisted: bool = False
+    agent: Optional[str] = None  # e.g., "claude-code", "user"
 
     def to_markdown(self) -> str:
         """Convert log entry to markdown."""
+        # Add AI marker if applicable
+        prefix = "[AI] " if self.ai_assisted else ""
+
         if self.project:
-            base = f"- **{self.project}**"
+            base = f"- {prefix}**{self.project}**"
             if self.hours:
                 base += f" ({self.hours}h)"
             base += f": {self.message}"
+            if self.agent and self.ai_assisted:
+                base += f" [via {self.agent}]"
             return base
-        return f"- {self.message}"
+        return f"- {prefix}{self.message}"
 
 
 @dataclass
@@ -97,6 +104,7 @@ class Session:
 
     Tracks active work time, pauses, and context for interruption handling.
     Enables time awareness and prevents time blindness.
+    Supports AI-assisted work tracking with clear attribution.
     """
 
     id: str
@@ -109,6 +117,8 @@ class Session:
     interruptions: List[str] = field(default_factory=list)
     context_snapshot: Dict[str, str] = field(default_factory=dict)
     notes: str = ""
+    ai_assisted: bool = False
+    agent: Optional[str] = None  # e.g., "claude-code", "user"
 
     def elapsed_time(self, current_time: Optional[datetime] = None) -> timedelta:
         """Calculate elapsed time excluding pauses.
@@ -160,6 +170,8 @@ class Session:
             "interruptions": self.interruptions,
             "context_snapshot": self.context_snapshot,
             "notes": self.notes,
+            "ai_assisted": self.ai_assisted,
+            "agent": self.agent,
         }
 
     @classmethod
@@ -173,6 +185,10 @@ class Session:
         if data.get("paused_at"):
             data["paused_at"] = datetime.fromisoformat(data["paused_at"])
         data["pause_duration"] = timedelta(seconds=data.get("pause_duration", 0))
+
+        # Backward compatibility: add defaults for AI fields if missing
+        data.setdefault("ai_assisted", False)
+        data.setdefault("agent", None)
 
         return cls(**data)
 
@@ -189,12 +205,19 @@ class Session:
         else:
             time_range = f"{start_str}-ongoing"
 
-        header = f"## {self.start_time.date()} {time_range} ({hours:.1f}h) - {self.project_id}"
+        # Add AI marker to header if AI-assisted
+        ai_prefix = "[AI] " if self.ai_assisted else ""
+        header = f"## {ai_prefix}{self.start_time.date()} {time_range} ({hours:.1f}h) - {self.project_id}"
 
         lines = [header, ""]
 
         if self.task:
             lines.append(f"**Task:** {self.task}")
+            lines.append("")
+
+        # Add agent attribution if AI-assisted
+        if self.ai_assisted and self.agent:
+            lines.append(f"**Agent:** {self.agent}")
             lines.append("")
 
         if self.notes:

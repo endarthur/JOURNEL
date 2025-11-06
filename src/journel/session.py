@@ -151,7 +151,9 @@ class SessionManager:
                 date=self.active_session.start_time.date(),
                 project=self.active_session.project_id,
                 message=log_message,
-                hours=hours
+                hours=hours,
+                ai_assisted=self.active_session.ai_assisted,  # Preserve AI attribution
+                agent=self.active_session.agent,  # Preserve agent info
             )
             self.storage.add_log_entry(entry)
 
