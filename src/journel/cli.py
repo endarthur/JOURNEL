@@ -1085,8 +1085,9 @@ def stats(ctx):
 @main.command()
 @click.pass_context
 def tui(ctx):
-    """Launch interactive Terminal UI for browsing projects.
+    """Launch interactive Terminal UI for browsing projects (EXPERIMENTAL).
 
+    WARNING: This feature is still under development and may have UX issues.
     Navigate with arrow keys or vim keys (j/k).
     Press ? for help.
     """

@@ -15,7 +15,7 @@
 - ✅ Project completion ritual (`jnl done`)
 - ✅ Resume with context (`jnl resume`)
 - ✅ Git integration (auto-commit)
-- ✅ Interactive TUI mode
+- 🚧 Interactive TUI mode (experimental - needs UX work)
 - ✅ Plain text storage (Markdown + YAML)
 
 **Data Model:**
