@@ -797,5 +797,20 @@ def sync():
         print_info("You can manually sync with: cd ~/.journel && git pull && git push")
 
 
+def tui_main():
+    """Entry point for 'tnl' command - direct TUI launcher."""
+    storage = get_storage()
+    try:
+        from .tui import run_tui
+        run_tui(storage)
+    except ImportError:
+        from .display import print_error, print_info
+        print_error("TUI requires 'textual' library")
+        print_info("Install with: pip install textual")
+    except Exception as e:
+        from .display import print_error
+        print_error(f"Failed to launch TUI: {e}")
+
+
 if __name__ == "__main__":
     main()
