@@ -148,6 +148,7 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
     # Categorize projects
     active_regular = []
     active_ongoing = []
+    maintenance = []
     dormant = []
     completed = []
 
@@ -156,6 +157,9 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
     for p in projects:
         if p.status == "completed":
             completed.append(p)
+        elif p.project_type == "maintenance":
+            # Maintenance projects always show (no dormancy threshold)
+            maintenance.append(p)
         else:
             # Use different dormant thresholds for regular vs ongoing
             threshold = dormant_days_ongoing if p.project_type == "ongoing" else dormant_days
@@ -170,6 +174,7 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
     # Sort by last_active
     active_regular.sort(key=lambda p: p.last_active, reverse=True)
     active_ongoing.sort(key=lambda p: p.last_active, reverse=True)
+    maintenance.sort(key=lambda p: p.last_active, reverse=True)
     dormant.sort(key=lambda p: p.last_active, reverse=True)
     completed.sort(key=lambda p: p.last_active, reverse=True)
 
@@ -195,6 +200,18 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
             status_line = f"  [bold]{p.name:<20}[/bold] {completion_str}   {format_date_relative(p.last_active):<15}"
             if p.full_name:
                 status_line += f"  [dim]{p.full_name[:40]}[/dim]"
+            console.print(status_line)
+
+    # Print maintenance/infrastructure projects
+    if maintenance:
+        # Use wrench emoji for maintenance projects
+        wrench = "🔧" if _EMOJI_SUPPORT and use_emojis else "[MAINT]"
+        console.print(f"\n[bold magenta]{wrench} MAINTENANCE[/bold magenta]")
+        for p in maintenance:
+            # Maintenance doesn't show progress bar (no completion goal)
+            status_line = f"  [dim]{p.name:<20}[/dim]   {format_date_relative(p.last_active):<15}"
+            if p.full_name:
+                status_line += f"  [dim]{p.full_name[:50]}[/dim]"
             console.print(status_line)
 
     if not active_regular and not active_ongoing:
@@ -255,17 +272,18 @@ def print_status(projects: List[Project], config, active_session: Optional['Sess
 
     # Command hints (if enabled)
     if config.get("show_command_hints", True):
-        _print_command_hints(active_regular, active_ongoing, dormant, completed, use_emojis)
+        _print_command_hints(active_regular, active_ongoing, maintenance, dormant, completed, use_emojis)
 
     console.print()  # Blank line
 
 
-def _print_command_hints(active_regular: List[Project], active_ongoing: List[Project], dormant: List[Project], completed: List[Project], use_emojis: bool) -> None:
+def _print_command_hints(active_regular: List[Project], active_ongoing: List[Project], maintenance: List[Project], dormant: List[Project], completed: List[Project], use_emojis: bool) -> None:
     """Print helpful command suggestions based on current project state."""
     bulb = get_icon("bulb", use_emojis)
 
     hints = []
     all_active = active_regular + active_ongoing
+    # Note: maintenance projects are not included in "all_active" hints
 
     # Context-specific hints
     if all_active:

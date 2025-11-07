@@ -19,7 +19,7 @@ class Project:
     last_active: date = field(default_factory=date.today)
     completion: int = 0  # 0-100
     priority: str = "medium"  # low, medium, high
-    project_type: str = "regular"  # regular or ongoing (for long-term projects)
+    project_type: str = "regular"  # regular, ongoing, or maintenance
     github: str = ""
     claude_project: str = ""
     next_steps: str = ""

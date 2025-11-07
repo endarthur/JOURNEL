@@ -63,6 +63,7 @@ def create_new_import_state() -> Dict[str, Any]:
         "processed": {
             "imported_as_active": 0,
             "imported_as_ongoing": 0,
+            "imported_as_maintenance": 0,
             "imported_as_archived": 0,
             "skipped": 0,
         },
@@ -181,8 +182,8 @@ def process_repo_ai_mode(
         # Emit prompt
         prompt_data = {
             "type": "prompt",
-            "message": "Classify as: active | ongoing | archive | skip | quit",
-            "options": ["active", "ongoing", "archive", "skip", "quit"],
+            "message": "Classify as: active | ongoing | maintenance | archive | skip | quit",
+            "options": ["active", "ongoing", "maintenance", "archive", "skip", "quit"],
         }
         print(json.dumps(prompt_data), flush=True)
 
@@ -206,7 +207,7 @@ def process_repo_ai_mode(
         print(f"Last push: {repo.pushed_at.date()}")
         if repo.open_issues_count > 0:
             print(f"Open issues: {repo.open_issues_count}")
-        print(f"\nClassify as: active | ongoing | archive | skip | quit")
+        print(f"\nClassify as: active | ongoing | maintenance | archive | skip | quit")
         print("> ", end="", flush=True)
 
         try:
@@ -284,6 +285,19 @@ def process_repo_ai_mode(
         else:
             print("Result: Created as ONGOING")
 
+    elif response == "maintenance" or response == "m":
+        create_project_from_repo(repo, storage, "maintenance")
+        state["processed"]["imported_as_maintenance"] += 1
+        if json_output:
+            result = {
+                "type": "result",
+                "action": "imported_as_maintenance",
+                "name": repo.name,
+            }
+            print(json.dumps(result), flush=True)
+        else:
+            print("Result: Created as MAINTENANCE")
+
     elif response == "skip" or response == "s":
         state["processed"]["skipped"] += 1
         if json_output:
@@ -335,7 +349,7 @@ def process_repo_interactive(
     config = storage.config
 
     # Display repo info
-    console.print(f"\n{'─' * 60}\n")
+    console.print(f"\n{'-' * 60}\n")
     console.print(f"[bold cyan][{index}/{total}] {repo.name}[/bold cyan]")
     console.print(f"      ⭐ {repo.stargazers_count} stars | 📅 {format_date_relative(repo.pushed_at.date())}")
 
@@ -420,8 +434,14 @@ def create_project_from_repo(repo: GitHubRepo, storage: Storage, status: str) ->
         return
 
     # Determine project type and status
-    project_type = "ongoing" if status == "ongoing" else "regular"
-    project_status = "in-progress" if status in ["active", "ongoing"] else "archived"
+    if status == "ongoing":
+        project_type = "ongoing"
+    elif status == "maintenance":
+        project_type = "maintenance"
+    else:
+        project_type = "regular"
+
+    project_status = "in-progress" if status in ["active", "ongoing", "maintenance"] else "archived"
 
     # Create project
     project = Project(
@@ -464,7 +484,7 @@ Stars: {repo.stargazers_count}
 
 def show_batch_summary(state: Dict[str, Any], batch_num: int, total_batches: int) -> None:
     """Show summary after completing a batch."""
-    console.print(f"\n{'─' * 60}\n")
+    console.print(f"\n{'-' * 60}\n")
     console.print(f"[bold green]Batch {batch_num} complete![/bold green]")
     console.print(f"\n[cyan]Summary so far:[/cyan]")
     console.print(f"  Active: {state['processed']['imported_as_active']} projects")
@@ -480,7 +500,7 @@ def show_batch_summary(state: Dict[str, Any], batch_num: int, total_batches: int
 
 def show_quit_summary(state: Dict[str, Any], remaining: int) -> None:
     """Show summary when user quits."""
-    console.print(f"\n{'─' * 60}\n")
+    console.print(f"\n{'-' * 60}\n")
     console.print("[bold cyan]Import paused! Progress saved.[/bold cyan]")
     console.print("\nYou can resume anytime with: [bold]jnl import github --resume[/bold]")
     console.print("\n[cyan]What you've done:[/cyan]")
@@ -494,7 +514,7 @@ def show_quit_summary(state: Dict[str, Any], remaining: int) -> None:
 
 def show_completion_summary(state: Dict[str, Any]) -> None:
     """Show summary when import is complete."""
-    console.print(f"\n{'─' * 60}\n")
+    console.print(f"\n{'-' * 60}\n")
     console.print("[bold green]🎉 GitHub Import Complete! 🎉[/bold green]")
     console.print("\n[cyan]Final Summary:[/cyan]")
     console.print(f"  Total processed: {state['current_position']} repos")

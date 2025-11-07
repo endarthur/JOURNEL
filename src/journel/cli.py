@@ -451,7 +451,8 @@ def init():
 @click.argument("description", required=False)
 @click.option("--tags", help="Comma-separated tags")
 @click.option("--ongoing", is_flag=True, help="Mark as ongoing/long-term project")
-def new(name, description, tags, ongoing):
+@click.option("--maintenance", is_flag=True, help="Mark as maintenance/infrastructure project")
+def new(name, description, tags, ongoing, maintenance):
     """Create a new project.
 
     Usage:
@@ -459,11 +460,17 @@ def new(name, description, tags, ongoing):
         jnl new MyProject "A longer description"
         jnl new MyProject "Description" --tags "python,cli"
         jnl new MyProject --ongoing  (for long-term projects)
+        jnl new MyProject --maintenance  (for infrastructure/libraries)
 
     Includes gentle gate-keeping to prevent project-hopping.
     """
     storage = get_storage()
     config = storage.config
+
+    # Check for mutually exclusive flags
+    if ongoing and maintenance:
+        print_error("Project cannot be both --ongoing and --maintenance")
+        return
 
     # Check for existing projects
     projects = storage.list_projects()
@@ -471,6 +478,7 @@ def new(name, description, tags, ongoing):
     active_ongoing = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 90 and p.project_type == "ongoing"]
 
     # Gate-keeping: check appropriate limit based on project type
+    # Note: Maintenance projects have no limit (don't gate-keep)
     if ongoing:
         max_ongoing = config.get("max_ongoing_projects", 2)
         if len(active_ongoing) >= max_ongoing:
@@ -505,6 +513,13 @@ def new(name, description, tags, ongoing):
         return
 
     # Create project
+    if maintenance:
+        project_type = "maintenance"
+    elif ongoing:
+        project_type = "ongoing"
+    else:
+        project_type = "regular"
+
     project = Project(
         id=project_id,
         name=name,
@@ -512,7 +527,7 @@ def new(name, description, tags, ongoing):
         tags=tags.split(",") if tags else [],
         created=date.today(),
         last_active=date.today(),
-        project_type="ongoing" if ongoing else "regular",
+        project_type=project_type,
     )
 
     # Auto-detect git repo
@@ -604,6 +619,51 @@ def set_regular(project):
 
     print_success(f"{proj.name} is now tracked as a regular active project")
     print_info("Use 'jnl status' to see it in the ACTIVE section")
+
+
+@main.command(name="set-maintenance")
+@click.argument("project")
+def set_maintenance(project):
+    """Mark a project as maintenance/infrastructure.
+
+    Maintenance projects:
+    - Don't count against your active or ongoing limits
+    - Visible but not demanding (no completion pressure)
+    - For infrastructure, libraries, portfolio sites
+    - Expected to need only occasional updates
+
+    Usage:
+        jnl set-maintenance myproject
+    """
+    storage = get_storage()
+    proj = storage.load_project(project)
+
+    if not proj:
+        print_error(f"Project '{project}' not found")
+        return
+
+    if proj.project_type == "maintenance":
+        print_info(f"{proj.name} is already marked as maintenance")
+        return
+
+    # Confirm the change
+    console.print(f"\n[bold]This will move {proj.name} to MAINTENANCE tracking.[/bold]\n")
+    console.print("MAINTENANCE projects:")
+    console.print("  - Don't count against active/ongoing limits")
+    console.print("  - Visible but don't create completion pressure")
+    console.print("  - Best for infrastructure, libraries, portfolio sites")
+    console.print("  - Expected to need only occasional updates\n")
+
+    if not click.confirm("Continue?", default=True):
+        console.print("[dim]Cancelled[/dim]")
+        return
+
+    proj.project_type = "maintenance"
+    storage.save_project(proj)
+    storage.update_project_index()
+
+    print_success(f"{proj.name} is now tracked as maintenance")
+    print_info("Use 'jnl status' to see it in the MAINTENANCE section")
 
 
 @main.command()
