@@ -551,7 +551,8 @@ def new(name, description, tags, ongoing, maintenance):
 
 @main.command(name="set-ongoing")
 @click.argument("project")
-def set_ongoing(project):
+@click.option("--yes", is_flag=True, help="Skip confirmation (non-interactive mode)")
+def set_ongoing(project, yes):
     """Mark a project as ongoing/long-term.
 
     Ongoing projects:
@@ -561,6 +562,7 @@ def set_ongoing(project):
 
     Usage:
         jnl set-ongoing myproject
+        jnl set-ongoing myproject --yes
     """
     storage = get_storage()
     proj = storage.load_project(project)
@@ -580,7 +582,7 @@ def set_ongoing(project):
     console.print("  - Are expected to have gaps (weeks between activity)")
     console.print("  - Should represent sustained multi-month/year efforts\n")
 
-    if not click.confirm("Is this truly an ongoing marathon project?", default=True):
+    if not yes and not click.confirm("Is this truly an ongoing marathon project?", default=True):
         print_info("No changes made")
         return
 
@@ -623,7 +625,8 @@ def set_regular(project):
 
 @main.command(name="set-maintenance")
 @click.argument("project")
-def set_maintenance(project):
+@click.option("--yes", is_flag=True, help="Skip confirmation (non-interactive mode)")
+def set_maintenance(project, yes):
     """Mark a project as maintenance/infrastructure.
 
     Maintenance projects:
@@ -634,6 +637,7 @@ def set_maintenance(project):
 
     Usage:
         jnl set-maintenance myproject
+        jnl set-maintenance myproject --yes
     """
     storage = get_storage()
     proj = storage.load_project(project)
@@ -654,7 +658,7 @@ def set_maintenance(project):
     console.print("  - Best for infrastructure, libraries, portfolio sites")
     console.print("  - Expected to need only occasional updates\n")
 
-    if not click.confirm("Continue?", default=True):
+    if not yes and not click.confirm("Continue?", default=True):
         console.print("[dim]Cancelled[/dim]")
         return
 
@@ -668,8 +672,9 @@ def set_maintenance(project):
 
 @main.command()
 @click.option("--brief", is_flag=True, help="Brief output for prompts")
+@click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
 @click.pass_context
-def status(ctx, brief):
+def status(ctx, brief, format):
     """Show overview of all projects (default command)."""
     no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
     storage = get_storage(no_emoji)
@@ -678,10 +683,37 @@ def status(ctx, brief):
     projects = storage.list_projects()
 
     if not projects:
-        print_info("No projects yet. Create one with: jnl new <name>")
+        if format == "json":
+            import json
+            print(json.dumps({"projects": [], "count": 0}))
+        else:
+            print_info("No projects yet. Create one with: jnl new <name>")
         return
 
-    if brief:
+    if format == "json":
+        import json
+        # Convert projects to JSON-serializable format
+        projects_data = []
+        for p in projects:
+            projects_data.append({
+                "id": p.id,
+                "name": p.name,
+                "full_name": p.full_name,
+                "status": p.status,
+                "tags": p.tags,
+                "created": p.created.isoformat() if hasattr(p.created, 'isoformat') else str(p.created),
+                "last_active": p.last_active.isoformat() if hasattr(p.last_active, 'isoformat') else str(p.last_active),
+                "days_since_active": p.days_since_active(),
+                "completion": p.completion,
+                "priority": p.priority,
+                "project_type": p.project_type,
+                "github": p.github,
+                "claude_project": p.claude_project,
+                "next_steps": p.next_steps,
+                "blockers": p.blockers,
+            })
+        print(json.dumps({"projects": projects_data, "count": len(projects_data)}, indent=2))
+    elif brief:
         active = [p for p in projects if p.status == "in-progress" and p.days_since_active() <= 14]
         console.print(f"[JOURNEL: {len(active)} active projects]")
     else:
@@ -891,8 +923,10 @@ def ask(question, project):
 
 @main.command()
 @click.argument("project_id")
+@click.option("--yes", is_flag=True, help="Skip prompts (non-interactive mode)")
+@click.option("--skip-celebration", is_flag=True, help="Skip celebration (AI-friendly)")
 @click.pass_context
-def done(ctx, project_id):
+def done(ctx, project_id, yes, skip_celebration):
     """Mark a project as complete with celebration ritual!"""
     no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
     storage = get_storage(no_emoji)
@@ -907,16 +941,17 @@ def done(ctx, project_id):
         print_info(f"{project.name} is already completed!")
         return
 
-    # Ask what they learned
-    learned = click.prompt("\nWhat did you learn?", default="", show_default=False)
-    if learned:
-        project.learned = learned
+    # Ask what they learned (skip if --yes)
+    if not yes:
+        learned = click.prompt("\nWhat did you learn?", default="", show_default=False)
+        if learned:
+            project.learned = learned
 
-    # Optional: how do you feel?
-    feeling = click.prompt("How do you feel? (optional)", default="", show_default=False)
-    if feeling:
-        # Append to notes
-        project.notes += f"\n\n## Completion Reflection\n{feeling}\n"
+        # Optional: how do you feel?
+        feeling = click.prompt("How do you feel? (optional)", default="", show_default=False)
+        if feeling:
+            # Append to notes
+            project.notes += f"\n\n## Completion Reflection\n{feeling}\n"
 
     # Mark as complete
     project.completion = 100
@@ -929,8 +964,8 @@ def done(ctx, project_id):
     # Count total completed
     completed = [p for p in storage.list_projects() if p.status == "completed"]
 
-    # Celebrate!
-    if config.get("completion_celebration"):
+    # Celebrate! (skip if --yes or --skip-celebration)
+    if not skip_celebration and not yes and config.get("completion_celebration"):
         use_emojis = config.get("use_emojis", True)
         print_completion_celebration(project, len(completed), use_emojis)
     else:
@@ -978,7 +1013,8 @@ def resume(project_id):
 @click.option("--completed", is_flag=True, help="Show only completed projects")
 @click.option("--archived", is_flag=True, help="Show only archived projects")
 @click.option("--tag", help="Filter by tag")
-def list_projects(active, dormant, completed, archived, tag):
+@click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
+def list_projects(active, dormant, completed, archived, tag, format):
     """List all projects with optional filters."""
     storage = get_storage()
 
@@ -1008,7 +1044,31 @@ def list_projects(active, dormant, completed, archived, tag):
         projects = [p for p in projects if tag in p.tags]
         title += f" (tag: {tag})"
 
-    print_list(projects, title=title)
+    if format == "json":
+        import json
+        # Convert projects to JSON-serializable format
+        projects_data = []
+        for p in projects:
+            projects_data.append({
+                "id": p.id,
+                "name": p.name,
+                "full_name": p.full_name,
+                "status": p.status,
+                "tags": p.tags,
+                "created": p.created.isoformat() if hasattr(p.created, 'isoformat') else str(p.created),
+                "last_active": p.last_active.isoformat() if hasattr(p.last_active, 'isoformat') else str(p.last_active),
+                "days_since_active": p.days_since_active(),
+                "completion": p.completion,
+                "priority": p.priority,
+                "project_type": p.project_type,
+                "github": p.github,
+                "claude_project": p.claude_project,
+                "next_steps": p.next_steps,
+                "blockers": p.blockers,
+            })
+        print(json.dumps({"projects": projects_data, "count": len(projects_data), "filter": title}, indent=2))
+    else:
+        print_list(projects, title=title)
 
 
 @main.command()
@@ -1118,8 +1178,9 @@ def note(text):
 @main.command()
 @click.argument("project_ids", nargs=-1, required=True)
 @click.option("--dormant", is_flag=True, help="Archive all dormant projects")
+@click.option("--yes", is_flag=True, help="Skip confirmation (non-interactive mode)")
 @click.pass_context
-def archive(ctx, project_ids, dormant):
+def archive(ctx, project_ids, dormant, yes):
     """Archive projects to clear them from active view.
 
     Archives are for projects you're shelving (not finishing).
@@ -1129,6 +1190,7 @@ def archive(ctx, project_ids, dormant):
         jnl archive my-project
         jnl archive project1 project2 project3
         jnl archive --dormant (archives all dormant projects)
+        jnl archive --dormant --yes (non-interactive)
     """
     no_emoji = ctx.obj.get('no_emoji', False) if ctx.obj else False
     storage = get_storage(no_emoji)
@@ -1153,7 +1215,7 @@ def archive(ctx, project_ids, dormant):
         for p in projects_to_archive:
             console.print(f"  - {p.name} (inactive for {p.days_since_active()} days)")
 
-        if not click.confirm("\nArchive all these projects?", default=False):
+        if not yes and not click.confirm("\nArchive all these projects?", default=False):
             print_info("Cancelled")
             return
     else:
