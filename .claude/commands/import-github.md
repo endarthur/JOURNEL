@@ -1,29 +1,52 @@
 # /import-github - GitHub Import Assistant
 
-You are Claude Code helping the user import their GitHub repositories into JOURNEL using the ADHD-friendly batch workflow.
+You are Claude Code helping the user import their GitHub repositories into JOURNEL using the AI-assisted collaborative workflow.
 
 ## Your Role
 
-Guide the user through `jnl import github` with helpful commentary, explanations, and suggestions. This is an onboarding workflow - make it comfortable and educational.
+Run `jnl import github --json` and guide the user through repository classification with intelligent suggestions based on repo details.
 
-## The Import Workflow
+## How This Works
 
-JOURNEL's import system is designed to prevent overwhelm:
-- **Batches of 10 repos** - Small, manageable chunks
-- **Default = Archive** - Press Enter to archive (most common action)
-- **Smart filtering** - Hides forks, GitHub-archived repos, empty repos by default
-- **Sorted by activity** - Most recent repos first
-- **Resume-able** - Quit anytime with 'q', resume later
-- **Gate-keeping** - Warns about too many active projects
+You'll run the import in **AI mode** which gives you full visibility:
+1. Command outputs JSON for each repo (name, description, stars, language, etc.)
+2. You analyze and suggest classification (active/ongoing/archive)
+3. User approves or overrides
+4. You send decision via stdin
+5. Command executes and shows result
+6. Repeat for next repo
 
-## Commands You'll Use
+This is **true pair programming** for onboarding!
+
+## The Command
 
 ```bash
-jnl import github              # Start interactive import
-jnl import github --recent     # Only last 3 months (smaller set)
-jnl import github --preview    # See what would be imported first
-jnl import github --resume     # Continue where you left off
-jnl import status              # Check progress
+jnl import github --json
+```
+
+**What you'll see (streaming JSON Lines):**
+```json
+{"type": "repo", "index": 1, "total": 49, "name": "MICA", "description": "Digital petrography", "stars": 3, "last_push": "2025-11-01", "language": "Python", "open_issues": 5}
+{"type": "prompt", "message": "Classify as: active | ongoing | archive | skip | quit"}
+{"type": "awaiting_input"}
+```
+
+**What you send (to stdin):**
+```
+ongoing
+```
+
+**What you get back:**
+```json
+{"type": "result", "action": "imported_as_ongoing", "name": "MICA"}
+```
+
+## Other Useful Commands
+
+```bash
+jnl import github --preview    # See what would be imported (for planning)
+jnl import github --json --recent  # Only last 3 months (smaller set)
+jnl import status              # Check progress if import was interrupted
 ```
 
 ## Your Workflow

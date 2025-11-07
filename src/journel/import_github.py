@@ -1,5 +1,6 @@
 """GitHub repository import with ADHD-friendly batch workflow."""
 
+import json
 import sys
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
@@ -134,6 +135,189 @@ def get_single_keypress() -> str:
     except (ImportError, AttributeError):
         # Fall back to regular input on Windows
         return input().strip().lower()[:1] if input().strip() else ""
+
+
+def process_repo_ai_mode(
+    repo: GitHubRepo,
+    index: int,
+    total: int,
+    storage: Storage,
+    state: Dict[str, Any],
+    json_output: bool = False,
+) -> Optional[str]:
+    """Process a single repo in AI-friendly mode.
+
+    If json_output=True:
+        - Emits JSON lines to stdout
+        - Reads single-line decisions from stdin
+        - No prompts, no colors, pure data exchange
+
+    If json_output=False (AI-mode but human-readable):
+        - Emits plain text (no colors/formatting)
+        - Clear, parseable structure
+        - Machine-readable but also human-debuggable
+
+    Returns:
+        None to continue, "quit" to quit
+    """
+    config = storage.config
+
+    if json_output:
+        # Emit repo as JSON
+        repo_data = {
+            "type": "repo",
+            "index": index,
+            "total": total,
+            "name": repo.name,
+            "description": repo.description,
+            "stars": repo.stargazers_count,
+            "last_push": repo.pushed_at.date().isoformat(),
+            "language": repo.language,
+            "open_issues": repo.open_issues_count,
+            "url": repo.html_url,
+        }
+        print(json.dumps(repo_data), flush=True)
+
+        # Emit prompt
+        prompt_data = {
+            "type": "prompt",
+            "message": "Classify as: active | ongoing | archive | skip | quit",
+            "options": ["active", "ongoing", "archive", "skip", "quit"],
+        }
+        print(json.dumps(prompt_data), flush=True)
+
+        # Signal ready for input
+        print(json.dumps({"type": "awaiting_input"}), flush=True)
+
+        # Read response from stdin (blocking)
+        try:
+            response = input().strip().lower()
+        except EOFError:
+            response = "quit"
+
+    else:
+        # Plain text AI mode (debuggable)
+        print(f"\n{'-' * 60}")
+        print(f"REPO {index}/{total}")
+        print(f"{'-' * 60}")
+        print(f"Name: {repo.name}")
+        print(f"Description: {repo.description or 'N/A'}")
+        print(f"Stars: {repo.stargazers_count} | Language: {repo.language or 'N/A'}")
+        print(f"Last push: {repo.pushed_at.date()}")
+        if repo.open_issues_count > 0:
+            print(f"Open issues: {repo.open_issues_count}")
+        print(f"\nClassify as: active | ongoing | archive | skip | quit")
+        print("> ", end="", flush=True)
+
+        try:
+            response = input().strip().lower()
+        except EOFError:
+            response = "quit"
+
+    # Process response
+    if response == "quit" or response == "q":
+        return "quit"
+
+    elif response == "active" or response == "a":
+        # Check gate-keeping for active projects
+        projects = storage.list_projects()
+        active_regular = [p for p in projects if p.status == "in-progress" and p.project_type == "regular"]
+
+        max_active = config.get("max_active_projects", 5)
+        gate_issue = False
+
+        if len(active_regular) >= max_active:
+            gate_issue = True
+            if json_output:
+                warning_data = {
+                    "type": "gate_warning",
+                    "severity": "high",
+                    "message": f"Already have {len(active_regular)} active projects (limit: {max_active})",
+                    "current_count": len(active_regular),
+                    "limit": max_active,
+                    "recommendation": "ongoing_or_archive",
+                }
+                print(json.dumps(warning_data), flush=True)
+            else:
+                print(f"\n⚠️  You already have {len(active_regular)} active projects (limit: {max_active})!")
+                print("Current active projects:")
+                for p in active_regular[:5]:
+                    print(f"  - {p.name} ({p.completion}% complete)")
+                print("\nArchiving instead...")
+
+        if gate_issue:
+            create_project_from_repo(repo, storage, "archived")
+            state["processed"]["imported_as_archived"] += 1
+            if json_output:
+                result = {
+                    "type": "result",
+                    "action": "imported_as_archived",
+                    "name": repo.name,
+                    "reason": "active_limit_hit",
+                }
+                print(json.dumps(result), flush=True)
+            else:
+                print("Result: Archived (active limit reached)")
+        else:
+            create_project_from_repo(repo, storage, "active")
+            state["processed"]["imported_as_active"] += 1
+            if json_output:
+                result = {
+                    "type": "result",
+                    "action": "imported_as_active",
+                    "name": repo.name,
+                }
+                print(json.dumps(result), flush=True)
+            else:
+                print("Result: Created as ACTIVE")
+
+    elif response == "ongoing" or response == "o":
+        create_project_from_repo(repo, storage, "ongoing")
+        state["processed"]["imported_as_ongoing"] += 1
+        if json_output:
+            result = {
+                "type": "result",
+                "action": "imported_as_ongoing",
+                "name": repo.name,
+            }
+            print(json.dumps(result), flush=True)
+        else:
+            print("Result: Created as ONGOING")
+
+    elif response == "skip" or response == "s":
+        state["processed"]["skipped"] += 1
+        if json_output:
+            result = {
+                "type": "result",
+                "action": "skipped",
+                "name": repo.name,
+            }
+            print(json.dumps(result), flush=True)
+        else:
+            print("Result: Skipped")
+
+    else:  # archive or Enter or any other key
+        create_project_from_repo(repo, storage, "archived")
+        state["processed"]["imported_as_archived"] += 1
+        if json_output:
+            result = {
+                "type": "result",
+                "action": "imported_as_archived",
+                "name": repo.name,
+            }
+            print(json.dumps(result), flush=True)
+        else:
+            print("Result: Archived")
+
+    # Track in state
+    state["repos_processed"].append({
+        "name": repo.name,
+        "action": response or "archive",
+        "timestamp": datetime.now().isoformat(),
+    })
+    state["current_position"] = index
+
+    return None
 
 
 def process_repo_interactive(
@@ -329,10 +513,17 @@ def import_github_repos(
     archive_remaining: bool = False,
     include_archived: bool = False,
     include_forks: bool = False,
+    ai_mode: bool = False,
+    json_output: bool = False,
+    force_new: bool = False,
 ) -> None:
     """Import GitHub repos with ADHD-friendly batch workflow."""
     config = Config()
     storage = Storage(config)
+
+    # json_output implies ai_mode
+    if json_output:
+        ai_mode = True
 
     # Initialize GitHub client
     try:
@@ -342,16 +533,38 @@ def import_github_repos(
         return
 
     # Load or create state
-    if resume:
+    if force_new:
+        # Clear existing state
+        clear_import_state(storage)
+        state = create_new_import_state()
+    elif resume:
         state = load_import_state(storage)
         if not state:
-            print_error("No previous import session found")
-            console.print("[dim]Start a new import with: jnl import github[/dim]\n")
+            if not ai_mode:
+                print_error("No previous import session found")
+                console.print("[dim]Start a new import with: jnl import github[/dim]\n")
+            else:
+                # AI mode: just start new silently
+                state = create_new_import_state()
             return
-        console.print(f"\n[cyan]Resuming import from {state['started'][:10]}[/cyan]")
-        console.print(f"Progress: {state['current_position']} processed, continuing...")
+        if not ai_mode:
+            console.print(f"\n[cyan]Resuming import from {state['started'][:10]}[/cyan]")
+            console.print(f"Progress: {state['current_position']} processed, continuing...")
     else:
-        state = create_new_import_state()
+        # Check for existing state (auto-resume in AI mode)
+        existing_state = load_import_state(storage)
+        if existing_state and ai_mode:
+            # AI mode: auto-resume
+            state = existing_state
+        elif existing_state and not ai_mode:
+            # Human mode: ask
+            state = existing_state
+            console.print(f"\n[cyan]Import in progress detected ({state['current_position']} processed)[/cyan]")
+            if not click.confirm("Resume where you left off?", default=True):
+                clear_import_state(storage)
+                state = create_new_import_state()
+        else:
+            state = create_new_import_state()
 
     # Fetch repos
     console.print("\n[cyan]Fetching your GitHub repos...[/cyan]")
@@ -399,12 +612,14 @@ def import_github_repos(
     start_pos = state.get("current_position", 0)
     remaining_repos = repos[start_pos:]
 
-    console.print("\n" + "=" * 60)
-    console.print("[bold cyan]GitHub Import - ADHD-Friendly Batch Mode[/bold cyan]")
-    console.print("=" * 60)
-    console.print("\nPress [bold]Enter[/bold] to ARCHIVE (default)")
-    console.print("Press [bold]'a'[/bold] for ACTIVE, [bold]'o'[/bold] for ONGOING, [bold]'s'[/bold] to SKIP")
-    console.print("Press [bold]'q'[/bold] to QUIT and save progress\n")
+    # Show header (skip in AI mode)
+    if not ai_mode:
+        console.print("\n" + "=" * 60)
+        console.print("[bold cyan]GitHub Import - ADHD-Friendly Batch Mode[/bold cyan]")
+        console.print("=" * 60)
+        console.print("\nPress [bold]Enter[/bold] to ARCHIVE (default)")
+        console.print("Press [bold]'a'[/bold] for ACTIVE, [bold]'o'[/bold] for ONGOING, [bold]'s'[/bold] to SKIP")
+        console.print("Press [bold]'q'[/bold] to QUIT and save progress\n")
 
     # Process in batches
     total_batches = (len(remaining_repos) + BATCH_SIZE - 1) // BATCH_SIZE
@@ -414,35 +629,64 @@ def import_github_repos(
         end_idx = min(start_idx + BATCH_SIZE, len(remaining_repos))
         batch = remaining_repos[start_idx:end_idx]
 
-        console.print(f"\n[bold]BATCH {batch_num} of {total_batches}[/bold] (showing {len(batch)} repos)\n")
+        # Show batch header (skip in AI mode)
+        if not ai_mode:
+            console.print(f"\n[bold]BATCH {batch_num} of {total_batches}[/bold] (showing {len(batch)} repos)\n")
 
         for i, repo in enumerate(batch):
             global_index = start_pos + start_idx + i + 1
-            result = process_repo_interactive(repo, global_index, len(repos), storage, state)
+
+            # Use AI mode or interactive mode
+            if ai_mode:
+                result = process_repo_ai_mode(repo, global_index, len(repos), storage, state, json_output)
+            else:
+                result = process_repo_interactive(repo, global_index, len(repos), storage, state)
 
             if result == "quit":
                 save_import_state(storage, state)
-                show_quit_summary(state, len(repos) - global_index)
+                if not ai_mode:
+                    show_quit_summary(state, len(repos) - global_index)
+                elif json_output:
+                    status_data = {
+                        "type": "status",
+                        "action": "quit",
+                        "processed": global_index,
+                        "remaining": len(repos) - global_index,
+                        "stats": state["processed"],
+                    }
+                    print(json.dumps(status_data), flush=True)
                 return
 
             # Save state after each repo
             save_import_state(storage, state)
 
         # Batch complete
-        show_batch_summary(state, batch_num, total_batches)
+        if not ai_mode:
+            show_batch_summary(state, batch_num, total_batches)
 
-        if batch_num < total_batches:
-            console.print(f"\n[bold]Continue with next batch?[/bold] [Y/n/q] > ", end="")
-            response = input().strip().lower()
+            if batch_num < total_batches:
+                console.print(f"\n[bold]Continue with next batch?[/bold] [Y/n/q] > ", end="")
+                response = input().strip().lower()
 
-            if response in ['q', 'quit']:
-                save_import_state(storage, state)
-                show_quit_summary(state, len(repos) - (start_pos + end_idx))
-                return
-            elif response in ['n', 'no']:
-                save_import_state(storage, state)
-                show_quit_summary(state, len(repos) - (start_pos + end_idx))
-                return
+                if response in ['q', 'quit']:
+                    save_import_state(storage, state)
+                    show_quit_summary(state, len(repos) - (start_pos + end_idx))
+                    return
+                elif response in ['n', 'no']:
+                    save_import_state(storage, state)
+                    show_quit_summary(state, len(repos) - (start_pos + end_idx))
+                    return
+        elif json_output:
+            # Emit batch status in JSON mode
+            status_data = {
+                "type": "batch_complete",
+                "batch": batch_num,
+                "total_batches": total_batches,
+                "processed": start_pos + end_idx,
+                "remaining": len(repos) - (start_pos + end_idx),
+                "stats": state["processed"],
+            }
+            print(json.dumps(status_data), flush=True)
 
     # All done!
     clear_import_state(storage)

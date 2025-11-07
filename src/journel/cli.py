@@ -1674,7 +1674,10 @@ def import_group():
 @click.option("--archive-remaining", is_flag=True, help="Bulk archive all unprocessed repos")
 @click.option("--include-archived", is_flag=True, help="Include GitHub-archived repos")
 @click.option("--include-forks", is_flag=True, help="Include forks with no commits")
-def import_github(recent, resume, preview, archive_remaining, include_archived, include_forks):
+@click.option("--ai-mode", is_flag=True, help="AI-friendly mode (plain text I/O)")
+@click.option("--json", "json_output", is_flag=True, help="JSON Lines output (implies --ai-mode)")
+@click.option("--force-new", is_flag=True, help="Start new session (ignore existing state)")
+def import_github(recent, resume, preview, archive_remaining, include_archived, include_forks, ai_mode, json_output, force_new):
     """Import GitHub repos as JOURNEL projects.
 
     ADHD-friendly batch workflow:
@@ -1698,6 +1701,9 @@ def import_github(recent, resume, preview, archive_remaining, include_archived, 
         archive_remaining=archive_remaining,
         include_archived=include_archived,
         include_forks=include_forks,
+        ai_mode=ai_mode,
+        json_output=json_output,
+        force_new=force_new,
     )
 
 
