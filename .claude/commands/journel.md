@@ -1,9 +1,9 @@
 <!-- VERSION: 1.0.0 -->
-<!-- Managed by JOURNEL. Update with: jnl setup-claude -->
+<!-- Managed by JOURNEL. Update with: jnl setup claude -->
 
 # /journel - JOURNEL AI Integration Command
 
-**ACTION REQUIRED: Run `jnl ai-setup-claude` to verify these instructions are current.**
+**ACTION REQUIRED: Run `jnl ai-setup claude` to verify these instructions are current.**
 
 If the command reports an update, re-read this file before proceeding.
 

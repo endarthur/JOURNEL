@@ -25,18 +25,43 @@ from .storage import Storage
 from .session import SessionManager
 from .utils import slugify, detect_git_repo, parse_time_from_message
 
-# Slash command version for Claude Code integration
+# Slash command version for AI provider integration
 SLASH_COMMAND_VERSION = "1.0.0"
 
+# Supported AI providers and their configurations
+AI_PROVIDERS = {
+    "claude": {
+        "name": "Claude Code",
+        "command_dir": ".claude/commands",
+        "file_name": "journel.md",
+        "file_format": "markdown",
+    },
+    "gemini": {
+        "name": "Gemini CLI",
+        "command_dir": ".gemini/commands",
+        "file_name": "journel.toml",
+        "file_format": "toml",
+    },
+}
 
-def _get_slash_command_content() -> str:
-    """Get the current slash command content with version header."""
+
+def _get_provider_command_path(provider: str) -> Path:
+    """Get the file path for a provider's slash command."""
+    if provider not in AI_PROVIDERS:
+        raise ValueError(f"Unknown provider: {provider}. Supported: {', '.join(AI_PROVIDERS.keys())}")
+
+    config = AI_PROVIDERS[provider]
+    return Path.cwd() / config["command_dir"] / config["file_name"]
+
+
+def _get_claude_slash_command_content() -> str:
+    """Get the Claude Code slash command content (Markdown format)."""
     return f"""<!-- VERSION: {SLASH_COMMAND_VERSION} -->
-<!-- Managed by JOURNEL. Update with: jnl setup-claude -->
+<!-- Managed by JOURNEL. Update with: jnl setup claude -->
 
 # /journel - JOURNEL AI Integration Command
 
-**ACTION REQUIRED: Run `jnl ai-setup-claude` to verify these instructions are current.**
+**ACTION REQUIRED: Run `jnl ai-setup claude` to verify these instructions are current.**
 
 If the command reports an update, re-read this file before proceeding.
 
@@ -226,8 +251,53 @@ AI-assisted entries are shown in **magenta** with **[AI]** prefix:
 """
 
 
+def _get_gemini_slash_command_content() -> str:
+    """Get the Gemini CLI slash command content (TOML format)."""
+    # Get Claude instructions and adapt for Gemini
+    claude_instructions = _get_claude_slash_command_content()
+
+    # Extract just the instructions part (skip the markdown header/version)
+    lines = claude_instructions.split('\n')
+    # Find where the actual instructions start (after the version header)
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip() == '---':
+            start_idx = i + 1
+            break
+
+    prompt_content = '\n'.join(lines[start_idx:]).strip()
+
+    # Replace Claude-specific references with Gemini-specific ones
+    prompt_content = prompt_content.replace('You are Claude Code', 'You are Gemini CLI')
+    prompt_content = prompt_content.replace('Claude Code', 'Gemini CLI')
+    prompt_content = prompt_content.replace('agent="claude-code"', 'agent="gemini-cli"')
+    prompt_content = prompt_content.replace('--agent cursor', '--agent gemini')
+
+    return f'''# VERSION: {SLASH_COMMAND_VERSION}
+# Managed by JOURNEL. Update with: jnl setup gemini
+
+description = "JOURNEL AI integration - Track your work with ADHD-friendly project management"
+
+prompt = """
+**ACTION REQUIRED: Run `jnl ai-setup gemini` to verify these instructions are current.**
+
+{prompt_content}
+"""
+'''
+
+
+def _get_slash_command_content_for_provider(provider: str) -> str:
+    """Get the slash command content for a specific provider."""
+    if provider == "claude":
+        return _get_claude_slash_command_content()
+    elif provider == "gemini":
+        return _get_gemini_slash_command_content()
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
 def _parse_version_from_file(file_path: Path) -> str:
-    """Parse version from slash command file.
+    """Parse version from slash command file (supports both Markdown and TOML).
 
     Returns:
         Version string (e.g., "1.0.0"), or "0.0.0" if not found
@@ -237,10 +307,19 @@ def _parse_version_from_file(file_path: Path) -> str:
 
     try:
         content = file_path.read_text(encoding="utf-8")
-        # Look for <!-- VERSION: x.y.z -->
-        for line in content.split("\n")[:5]:  # Check first 5 lines
+        # Look for VERSION: in first 5 lines
+        # Supports both:
+        #   - Markdown: <!-- VERSION: x.y.z -->
+        #   - TOML: # VERSION: x.y.z
+        for line in content.split("\n")[:5]:
             if "VERSION:" in line:
-                version = line.split("VERSION:")[1].split("-->")[0].strip()
+                # Extract version number
+                version_part = line.split("VERSION:")[1]
+                # Handle both markdown (ends with -->) and TOML (ends with newline/comment)
+                if "-->" in version_part:
+                    version = version_part.split("-->")[0].strip()
+                else:
+                    version = version_part.strip()
                 return version
     except Exception:
         pass
@@ -248,10 +327,11 @@ def _parse_version_from_file(file_path: Path) -> str:
     return "0.0.0"
 
 
-def _create_slash_command(file_path: Path) -> None:
-    """Create or update the slash command file."""
+def _create_slash_command_for_provider(provider: str, file_path: Path) -> None:
+    """Create or update the slash command file for a specific provider."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(_get_slash_command_content(), encoding="utf-8")
+    content = _get_slash_command_content_for_provider(provider)
+    file_path.write_text(content, encoding="utf-8")
 
 
 def get_storage(no_emoji: bool = False) -> Storage:
@@ -1382,53 +1462,85 @@ def sync():
         print_info("You can manually sync with: cd ~/.journel && git pull && git push")
 
 
-# ===== Claude Code Setup Commands =====
+# ===== AI Provider Setup Commands =====
 
-@main.command(name="setup-claude")
-def setup_claude():
+@main.group(name="setup")
+def setup_group():
+    """Setup AI provider integration (Claude Code, Gemini CLI, etc.)."""
+    pass
+
+
+@setup_group.command(name="claude")
+def setup_claude_new():
     """Create/update Claude Code slash command for /journel (interactive).
 
     Creates or updates .claude/commands/journel.md in the current directory
     with instructions for Claude Code to use JOURNEL's AI integration features.
 
     This is the human-friendly version with prompts.
-    For LLM usage, see: jnl ai-setup-claude
+    For LLM usage, see: jnl ai-setup claude
     """
-    claude_file = Path.cwd() / ".claude" / "commands" / "journel.md"
+    _setup_provider_interactive("claude")
 
-    if claude_file.exists():
+
+@setup_group.command(name="gemini")
+def setup_gemini_new():
+    """Create/update Gemini CLI slash command for /journel (interactive).
+
+    Creates or updates .gemini/commands/journel.toml in the current directory
+    with instructions for Gemini CLI to use JOURNEL's AI integration features.
+
+    This is the human-friendly version with prompts.
+    For LLM usage, see: jnl ai-setup gemini
+    """
+    _setup_provider_interactive("gemini")
+
+
+def _setup_provider_interactive(provider: str):
+    """Interactive setup for any AI provider."""
+    provider_config = AI_PROVIDERS[provider]
+    provider_name = provider_config["name"]
+    command_file = _get_provider_command_path(provider)
+
+    if command_file.exists():
         # Check version
-        current_version = _parse_version_from_file(claude_file)
+        current_version = _parse_version_from_file(command_file)
         console.print(f"\n[cyan]Current version:[/cyan] {current_version}")
         console.print(f"[cyan]Latest version:[/cyan] {SLASH_COMMAND_VERSION}")
 
         if current_version == SLASH_COMMAND_VERSION:
-            console.print(f"\n[green][OK][/green] Slash command is up to date!")
+            console.print(f"\n[green][OK][/green] {provider_name} slash command is up to date!")
             if not click.confirm("\nUpdate anyway?", default=False):
                 return
         else:
             console.print(f"\n[yellow]Update available:[/yellow] {current_version} -> {SLASH_COMMAND_VERSION}")
-            if not click.confirm("Update slash command?", default=True):
+            if not click.confirm(f"Update {provider_name} slash command?", default=True):
                 return
     else:
-        console.print(f"\n[cyan]Claude Code slash command not found[/cyan]")
-        console.print(f"Will create: {claude_file}")
+        console.print(f"\n[cyan]{provider_name} slash command not found[/cyan]")
+        console.print(f"Will create: {command_file}")
         if not click.confirm("\nCreate slash command?", default=True):
             return
 
     # Create/update the file
     try:
-        _create_slash_command(claude_file)
-        print_success(f"Slash command created/updated!")
-        console.print(f"\n[dim]Location:[/dim] {claude_file}")
+        _create_slash_command_for_provider(provider, command_file)
+        print_success(f"{provider_name} slash command created/updated!")
+        console.print(f"\n[dim]Location:[/dim] {command_file}")
         console.print(f"[dim]Version:[/dim] {SLASH_COMMAND_VERSION}")
-        console.print(f"\n[cyan]Usage:[/cyan] Type [bold]/journel[/bold] in Claude Code to load instructions")
+        console.print(f"\n[cyan]Usage:[/cyan] Type [bold]/journel[/bold] in {provider_name} to load instructions")
     except Exception as e:
         print_error(f"Failed to create slash command: {e}")
 
 
-@main.command(name="ai-setup-claude")
-def ai_setup_claude():
+@main.group(name="ai-setup")
+def ai_setup_group():
+    """Update AI provider integration (non-interactive, LLM-friendly)."""
+    pass
+
+
+@ai_setup_group.command(name="claude")
+def ai_setup_claude_new():
     """Update Claude Code slash command (non-interactive, LLM-friendly).
 
     Checks and updates .claude/commands/journel.md without prompts.
@@ -1443,33 +1555,77 @@ def ai_setup_claude():
         [OK] Instructions current (v1.0.0)
         [OK] Updated to v1.0.1 - Re-reading instructions...
     """
-    claude_file = Path.cwd() / ".claude" / "commands" / "journel.md"
+    _ai_setup_provider("claude")
+
+
+@ai_setup_group.command(name="gemini")
+def ai_setup_gemini_new():
+    """Update Gemini CLI slash command (non-interactive, LLM-friendly).
+
+    Checks and updates .gemini/commands/journel.toml without prompts.
+    Designed for use by AI assistants (like Gemini CLI).
+
+    Exit codes:
+        0 - Already up to date (no action needed)
+        1 - File was created/updated (LLM should re-read)
+        2 - Error occurred
+
+    Output format (parseable by LLMs):
+        [OK] Instructions current (v1.0.0)
+        [OK] Updated to v1.0.1 - Re-reading instructions...
+    """
+    _ai_setup_provider("gemini")
+
+
+def _ai_setup_provider(provider: str):
+    """Non-interactive setup for any AI provider (LLM-friendly)."""
+    provider_config = AI_PROVIDERS[provider]
+    provider_name = provider_config["name"]
+    command_file = _get_provider_command_path(provider)
 
     try:
-        if not claude_file.exists():
+        if not command_file.exists():
             # Create new file
-            _create_slash_command(claude_file)
-            console.print(f"[green][OK][/green] Created slash command v{SLASH_COMMAND_VERSION}")
-            console.print(f"[yellow]>>>[/yellow] Re-read {claude_file} for current instructions")
+            _create_slash_command_for_provider(provider, command_file)
+            console.print(f"[green][OK][/green] Created {provider_name} slash command v{SLASH_COMMAND_VERSION}")
+            console.print(f"[yellow]>>>[/yellow] Re-read {command_file} for current instructions")
             sys.exit(1)  # Signal update occurred
 
         # Check version
-        current_version = _parse_version_from_file(claude_file)
+        current_version = _parse_version_from_file(command_file)
 
         if current_version == SLASH_COMMAND_VERSION:
             # Already current
-            console.print(f"[green][OK][/green] Instructions current (v{SLASH_COMMAND_VERSION})")
+            console.print(f"[green][OK][/green] {provider_name} instructions current (v{SLASH_COMMAND_VERSION})")
             sys.exit(0)  # No update needed
 
         # Update needed
-        _create_slash_command(claude_file)
-        console.print(f"[green][OK][/green] Updated to v{SLASH_COMMAND_VERSION} (was v{current_version})")
-        console.print(f"[yellow]>>>[/yellow] Re-read {claude_file} for current instructions")
+        _create_slash_command_for_provider(provider, command_file)
+        console.print(f"[green][OK][/green] {provider_name} updated to v{SLASH_COMMAND_VERSION} (was v{current_version})")
+        console.print(f"[yellow]>>>[/yellow] Re-read {command_file} for current instructions")
         sys.exit(1)  # Signal update occurred
 
     except Exception as e:
         console.print(f"[red][ERROR][/red] {e}")
         sys.exit(2)  # Error occurred
+
+
+# ===== Deprecated Command Aliases (for backward compatibility) =====
+
+@main.command(name="setup-claude", hidden=True)
+def setup_claude_deprecated():
+    """Deprecated: Use 'jnl setup claude' instead."""
+    console.print("[yellow]Note:[/yellow] 'jnl setup-claude' is deprecated. Use 'jnl setup claude' instead.")
+    console.print()
+    _setup_provider_interactive("claude")
+
+
+@main.command(name="ai-setup-claude", hidden=True)
+def ai_setup_claude_deprecated():
+    """Deprecated: Use 'jnl ai-setup claude' instead."""
+    console.print("[yellow]Note:[/yellow] 'jnl ai-setup-claude' is deprecated. Use 'jnl ai-setup claude' instead.")
+    console.print()
+    _ai_setup_provider("claude")
 
 
 # ===== AI Integration Commands =====
