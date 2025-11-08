@@ -452,7 +452,8 @@ def init():
 @click.option("--tags", help="Comma-separated tags")
 @click.option("--ongoing", is_flag=True, help="Mark as ongoing/long-term project")
 @click.option("--maintenance", is_flag=True, help="Mark as maintenance/infrastructure project")
-def new(name, description, tags, ongoing, maintenance):
+@click.option("--yes", is_flag=True, help="Skip prompts (non-interactive mode)")
+def new(name, description, tags, ongoing, maintenance, yes):
     """Create a new project.
 
     Usage:
@@ -461,6 +462,7 @@ def new(name, description, tags, ongoing, maintenance):
         jnl new MyProject "Description" --tags "python,cli"
         jnl new MyProject --ongoing  (for long-term projects)
         jnl new MyProject --maintenance  (for infrastructure/libraries)
+        jnl new MyProject --yes  (skip all prompts)
 
     Includes gentle gate-keeping to prevent project-hopping.
     """
@@ -489,7 +491,7 @@ def new(name, description, tags, ongoing, maintenance):
             console.print("\n[yellow]Ongoing projects require sustained deep attention.[/yellow]")
             console.print("[dim]Consider completing one or converting to regular tracking.[/dim]")
 
-            if not click.confirm("\nReally start another ongoing project?", default=False):
+            if not yes and not click.confirm("\nReally start another ongoing project?", default=False):
                 print_info("Good choice! Focus matters for long-term success.")
                 return
     else:
@@ -500,7 +502,7 @@ def new(name, description, tags, ongoing, maintenance):
             for p in active_regular:
                 console.print(f"  - {p.name} ({p.completion}% complete)")
 
-            if not click.confirm("\nReally start something new?", default=False):
+            if not yes and not click.confirm("\nReally start something new?", default=False):
                 print_info("Good choice! Focus on finishing what you started.")
                 return
 
@@ -533,7 +535,7 @@ def new(name, description, tags, ongoing, maintenance):
     # Auto-detect git repo
     git_url = detect_git_repo()
     if git_url:
-        if click.confirm(f"\nDetected git repo: {git_url}\nLink to this project?", default=True):
+        if yes or click.confirm(f"\nDetected git repo: {git_url}\nLink to this project?", default=True):
             project.github = git_url
             print_success(f"Linked to: {git_url}")
 
