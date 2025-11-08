@@ -825,8 +825,9 @@ def log(project_or_message, message, hours):
 
 @main.command()
 @click.option("--project", "-p", help="Export context for specific project (use '.' for current directory)")
+@click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
 @click.argument("question", required=False)
-def ctx(project, question):
+def ctx(project, format, question):
     """Export context for LLM analysis.
 
     Generates a markdown summary of active projects and recent activity
@@ -836,6 +837,7 @@ def ctx(project, question):
         jnl ctx
         jnl ctx "what should I work on today?"
         jnl ctx --project mica
+        jnl ctx --format json
         jnl ctx .                    (current directory project)
         jnl ctx --project . "question"
     """
@@ -873,8 +875,42 @@ def ctx(project, question):
     # Get recent logs
     recent_logs = storage.get_recent_logs(days=7)
 
-    # Print context
-    print_context_export(projects, recent_logs, question)
+    # Output in requested format
+    if format == "json":
+        import json
+        # Filter to active projects for context
+        active_projects = [p for p in projects if p.status != "completed" and p.days_since_active() <= 14]
+
+        # Build JSON context
+        context_data = {
+            "active_projects": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "full_name": p.full_name,
+                    "completion": p.completion,
+                    "last_active": p.last_active.isoformat() if hasattr(p.last_active, 'isoformat') else str(p.last_active),
+                    "days_since_active": p.days_since_active(),
+                    "next_steps": p.next_steps,
+                    "blockers": p.blockers,
+                    "tags": p.tags,
+                    "priority": p.priority,
+                    "project_type": p.project_type,
+                    "github": p.github,
+                    "claude_project": p.claude_project,
+                }
+                for p in active_projects
+            ],
+            "recent_logs": recent_logs,
+        }
+
+        if question:
+            context_data["question"] = question
+
+        print(json.dumps(context_data, indent=2))
+    else:
+        # Print context
+        print_context_export(projects, recent_logs, question)
 
 
 @main.command()
@@ -1071,6 +1107,183 @@ def list_projects(active, dormant, completed, archived, tag, format):
         print(json.dumps({"projects": projects_data, "count": len(projects_data), "filter": title}, indent=2))
     else:
         print_list(projects, title=title)
+
+
+@main.command()
+@click.argument("project_id")
+@click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
+def get(project_id, format):
+    """Get details for a single project.
+
+    Usage:
+        jnl get myproject
+        jnl get myproject --format json
+    """
+    storage = get_storage()
+
+    project = storage.load_project(project_id)
+    if not project:
+        if format == "json":
+            import json
+            print(json.dumps({"error": f"Project '{project_id}' not found"}, indent=2))
+        else:
+            print_error(f"Project '{project_id}' not found")
+        return
+
+    if format == "json":
+        import json
+        project_data = {
+            "id": project.id,
+            "name": project.name,
+            "full_name": project.full_name,
+            "status": project.status,
+            "tags": project.tags,
+            "created": project.created.isoformat() if hasattr(project.created, 'isoformat') else str(project.created),
+            "last_active": project.last_active.isoformat() if hasattr(project.last_active, 'isoformat') else str(project.last_active),
+            "days_since_active": project.days_since_active(),
+            "completion": project.completion,
+            "priority": project.priority,
+            "project_type": project.project_type,
+            "github": project.github,
+            "claude_project": project.claude_project,
+            "next_steps": project.next_steps,
+            "blockers": project.blockers,
+            "notes": project.notes,
+            "learned": project.learned,
+        }
+        print(json.dumps(project_data, indent=2))
+    else:
+        # Text output
+        console.print(f"\n[bold]{project.name}[/bold] ({project.id})")
+        console.print(f"Status: {project.status} | Completion: {project.completion}% | Type: {project.project_type}")
+        console.print(f"Priority: {project.priority} | Last active: {project.days_since_active()} days ago")
+
+        if project.tags:
+            console.print(f"Tags: {', '.join(project.tags)}")
+
+        if project.github:
+            console.print(f"GitHub: {project.github}")
+        if project.claude_project:
+            console.print(f"Claude: {project.claude_project}")
+
+        if project.next_steps:
+            console.print(f"\n[bold]Next steps:[/bold]\n{project.next_steps}")
+        if project.blockers:
+            console.print(f"\n[bold]Blockers:[/bold]\n{project.blockers}")
+        if project.notes:
+            console.print(f"\n[bold]Notes:[/bold]\n{project.notes}")
+        if project.learned:
+            console.print(f"\n[bold]Learned:[/bold]\n{project.learned}")
+
+        console.print("")
+
+
+@main.command()
+@click.argument("project_id")
+@click.option("--completion", type=click.IntRange(0, 100), help="Set completion percentage (0-100)")
+@click.option("--priority", type=click.Choice(["low", "medium", "high"]), help="Set priority level")
+@click.option("--add-tag", "add_tags", multiple=True, help="Add tag (can be used multiple times)")
+@click.option("--remove-tag", "remove_tags", multiple=True, help="Remove tag (can be used multiple times)")
+@click.option("--next-steps", help="Set next steps text")
+@click.option("--blockers", help="Set blockers text")
+@click.option("--status", type=click.Choice(["in-progress", "completed", "archived"]), help="Set project status")
+@click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
+def update(project_id, completion, priority, add_tags, remove_tags, next_steps, blockers, status, format):
+    """Update project fields programmatically.
+
+    Usage:
+        jnl update myproject --completion 50
+        jnl update myproject --priority high
+        jnl update myproject --add-tag urgent --add-tag bug
+        jnl update myproject --remove-tag old-tag
+        jnl update myproject --next-steps "Implement feature X"
+        jnl update myproject --blockers "Waiting on API"
+        jnl update myproject --status in-progress
+        jnl update myproject --completion 75 --priority high --format json
+    """
+    storage = get_storage()
+
+    project = storage.load_project(project_id)
+    if not project:
+        if format == "json":
+            import json
+            print(json.dumps({"error": f"Project '{project_id}' not found", "success": False}, indent=2))
+        else:
+            print_error(f"Project '{project_id}' not found")
+        return
+
+    # Track what changed
+    changes = []
+
+    # Update fields
+    if completion is not None:
+        project.completion = completion
+        changes.append(f"completion: {completion}%")
+
+    if priority:
+        project.priority = priority
+        changes.append(f"priority: {priority}")
+
+    if add_tags:
+        for tag in add_tags:
+            if tag not in project.tags:
+                project.tags.append(tag)
+                changes.append(f"added tag: {tag}")
+
+    if remove_tags:
+        for tag in remove_tags:
+            if tag in project.tags:
+                project.tags.remove(tag)
+                changes.append(f"removed tag: {tag}")
+
+    if next_steps is not None:
+        project.next_steps = next_steps
+        changes.append("next_steps updated")
+
+    if blockers is not None:
+        project.blockers = blockers
+        changes.append("blockers updated")
+
+    if status:
+        project.status = status
+        changes.append(f"status: {status}")
+
+    # Check if anything changed
+    if not changes:
+        if format == "json":
+            import json
+            print(json.dumps({"error": "No fields specified to update", "success": False}, indent=2))
+        else:
+            print_error("No fields specified to update. Use --help to see available options.")
+        return
+
+    # Update last_active
+    project.last_active = date.today()
+
+    # Save project
+    storage.save_project(project)
+
+    # Output result
+    if format == "json":
+        import json
+        result = {
+            "success": True,
+            "project_id": project.id,
+            "changes": changes,
+            "updated_fields": {
+                "completion": project.completion,
+                "priority": project.priority,
+                "tags": project.tags,
+                "next_steps": project.next_steps,
+                "blockers": project.blockers,
+                "status": project.status,
+            }
+        }
+        print(json.dumps(result, indent=2))
+    else:
+        print_success(f"Updated {project.name}")
+        for change in changes:
+            console.print(f"  - {change}")
 
 
 @main.command()
