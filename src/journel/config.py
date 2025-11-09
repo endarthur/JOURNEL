@@ -36,7 +36,12 @@ class Config:
     def __init__(self, journel_dir: Path = None):
         """Initialize config manager."""
         if journel_dir is None:
-            journel_dir = Path.home() / ".journel"
+            # Check for JOURNEL_DIR environment variable (useful for testing)
+            env_dir = os.environ.get("JOURNEL_DIR")
+            if env_dir:
+                journel_dir = Path(env_dir)
+            else:
+                journel_dir = Path.home() / ".journel"
         self.journel_dir = Path(journel_dir)
         self.config_file = self.journel_dir / "config.yaml"
         self._config = DEFAULT_CONFIG.copy()

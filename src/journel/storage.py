@@ -21,8 +21,13 @@ class Storage:
         self.config = config
         self.repo: Optional[git.Repo] = None
 
-    def init_structure(self) -> None:
-        """Initialize the ~/.journel/ directory structure."""
+    def init_structure(self, init_git: bool = True) -> None:
+        """Initialize the ~/.journel/ directory structure.
+
+        Args:
+            init_git: Whether to initialize git repository (default True).
+                     Set to False during testing to avoid git configuration issues.
+        """
         # Create directories
         ensure_dir(self.config.projects_dir)
         ensure_dir(self.config.logs_dir)
@@ -64,13 +69,14 @@ generate context summaries for Claude or other LLMs.
             readme_path.write_text(readme_content, encoding="utf-8")
 
         # Initialize git repository
-        if not (self.config.journel_dir / ".git").exists():
-            self.repo = git.Repo.init(self.config.journel_dir)
-            # Create initial commit
-            self.repo.index.add(["."])
-            self.repo.index.commit("Initialize JOURNEL")
-        else:
-            self.repo = git.Repo(self.config.journel_dir)
+        if init_git:
+            if not (self.config.journel_dir / ".git").exists():
+                self.repo = git.Repo.init(self.config.journel_dir)
+                # Create initial commit
+                self.repo.index.add(["."])
+                self.repo.index.commit("Initialize JOURNEL")
+            else:
+                self.repo = git.Repo(self.config.journel_dir)
 
         # Save default config
         self.config.save()

@@ -33,9 +33,9 @@ def temp_journel_dir(monkeypatch, tmp_path):
 @pytest.fixture
 def storage(temp_journel_dir):
     """Provide a Storage instance with temp directory."""
-    config = Config()
+    config = Config(journel_dir=temp_journel_dir)
     storage = Storage(config)
-    storage.init_structure()
+    storage.init_structure(init_git=False)  # Skip git init during tests
     return storage
 
 
