@@ -1,4 +1,4 @@
-<!-- VERSION: 1.0.0 -->
+<!-- VERSION: 2.0.0 -->
 <!-- Managed by JOURNEL. Update with: jnl setup claude -->
 
 # /journel - JOURNEL AI Integration Command
@@ -172,6 +172,97 @@ AI-assisted entries are shown in **magenta** with **[AI]** prefix:
    jnl ai-stop "Completed feature X implementation. User learned about async patterns and error handling."
    ```
 
+## AI-Friendly Programmatic Interface
+
+JOURNEL provides a comprehensive API for AI agents to query and manipulate projects programmatically.
+
+### Reading Project Data
+
+**Get single project** (JSON output):
+```bash
+jnl get <project-id> --format json
+```
+
+**Query projects with filters** (always JSON):
+```bash
+jnl query --status in-progress --format json
+jnl query --dormant --format json
+jnl query --nearly-done --format json
+jnl query --project-type ongoing --format json
+jnl query --tag python --format json
+jnl query --fields id,name,completion --format json
+```
+
+**List all projects** (JSON or table):
+```bash
+jnl list --format json
+jnl list --active --format json
+jnl list --show-id  # Show IDs in table format
+```
+
+**Export context for analysis**:
+```bash
+jnl ctx --format json
+jnl ctx --project <project-id> --format json
+jnl ctx --question "What should I work on next?" --format json
+```
+
+### Updating Projects
+
+**Update project fields** (programmatic):
+```bash
+jnl update <project-id> --completion 75
+jnl update <project-id> --priority high
+jnl update <project-id> --add-tag python --add-tag cli
+jnl update <project-id> --remove-tag old-tag
+jnl update <project-id> --next-steps "Implement feature X"
+jnl update <project-id> --blockers "Waiting on API"
+jnl update <project-id> --format json  # Get JSON response
+```
+
+**Batch operations** (bulk updates with dry-run):
+```bash
+jnl batch --dormant --action archive --dry-run --format json
+jnl batch --status in-progress --action set-priority --value high --format json
+jnl batch --tag urgent --action add-tag --value reviewed --format json
+jnl batch --nearly-done --action set-completion --value 100 --dry-run --format json
+```
+
+### Non-Interactive Mode
+
+All interactive commands support `--yes` flag for automation:
+```bash
+jnl new "Project Name" "Description" --yes
+jnl done <project-id> --yes
+jnl archive <project-id> --yes
+```
+
+### Common Patterns for AI Agents
+
+**Check project status before working**:
+```bash
+jnl get journel --format json  # Get current state
+jnl list --active --format json  # See all active projects
+```
+
+**Update progress after work**:
+```bash
+jnl update journel --completion 85 --next-steps "Add tests"
+jnl ai-log journel "Implemented feature X (2h)"
+```
+
+**Find projects needing attention**:
+```bash
+jnl query --dormant --format json  # Projects >14 days inactive
+jnl query --nearly-done --format json  # Projects >80% complete
+```
+
+**Bulk cleanup**:
+```bash
+jnl batch --dormant --action archive --dry-run --format json  # Preview
+jnl batch --dormant --action archive --format json  # Execute
+```
+
 ## Important Notes
 
 - **Always suggest, never auto-run** (Tier 1 - Suggested Actions)
@@ -179,13 +270,18 @@ AI-assisted entries are shown in **magenta** with **[AI]** prefix:
 - **Focus on learning**: Frame AI work as collaborative learning
 - **Respect user preferences**: If user declines logging, don't keep asking
 - **Be mindful of frequency**: Don't over-log trivial work
+- **Use JSON for automation**: All query/read commands support `--format json`
+- **Use --yes for non-interactive**: Skip prompts when automating workflows
 
 ## Technical Details
 
-- Commands: `jnl ai-start`, `jnl ai-log`, `jnl ai-stop`
-- Data tracking: All AI work marked with `ai_assisted=True` and `agent="claude-code"`
-- Storage: YAML in `~/.journel/sessions/` and Markdown in `~/.journel/logs/`
-- Visual distinction: Magenta color, [AI] prefix
+- **Self-tracking commands**: `jnl ai-start`, `jnl ai-log`, `jnl ai-stop`
+- **Read commands**: `jnl get`, `jnl list`, `jnl query`, `jnl ctx`, `jnl status`
+- **Write commands**: `jnl update`, `jnl batch`, `jnl new`, `jnl done`, `jnl archive`
+- **Data tracking**: All AI work marked with `ai_assisted=True` and `agent="claude-code"`
+- **Storage**: YAML in `~/.journel/sessions/` and Markdown in `~/.journel/logs/`
+- **Visual distinction**: Magenta color, [AI] prefix
+- **JSON output**: Use `--format json` for machine-readable responses
 
 ---
 
