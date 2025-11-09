@@ -2373,6 +2373,52 @@ def setup_copilot_new():
     _setup_provider_interactive("copilot")
 
 
+@setup_group.command(name="all")
+def setup_all():
+    """Create/update instructions for all AI providers (Claude, Gemini, Copilot).
+
+    Sets up JOURNEL integration for all supported AI assistants at once.
+    You can skip individual providers if you don't use them.
+    """
+    console.print("\n[bold cyan]Setting up JOURNEL for all AI providers[/bold cyan]")
+    console.print("You'll be prompted for each provider. Skip any you don't use.\n")
+
+    providers_updated = []
+    providers_skipped = []
+
+    for provider_key in AI_PROVIDERS.keys():
+        provider_name = AI_PROVIDERS[provider_key]["name"]
+        console.print(f"\n[bold]--- {provider_name} ---[/bold]")
+
+        # Check if already exists and up to date
+        command_file = _get_provider_command_path(provider_key)
+        if command_file.exists():
+            current_version = _parse_version_from_file(command_file)
+            if current_version == SLASH_COMMAND_VERSION:
+                console.print(f"[green][OK][/green] Already up to date (v{SLASH_COMMAND_VERSION})")
+                if not click.confirm("Update anyway?", default=False):
+                    providers_skipped.append(provider_name)
+                    continue
+
+        if click.confirm(f"Set up {provider_name}?", default=True):
+            try:
+                _create_slash_command_for_provider(provider_key, command_file)
+                console.print(f"[green][OK][/green] {provider_name} configured!")
+                providers_updated.append(provider_name)
+            except Exception as e:
+                console.print(f"[red][ERROR][/red] Failed to set up {provider_name}: {e}")
+        else:
+            providers_skipped.append(provider_name)
+
+    # Summary
+    console.print(f"\n[bold cyan]Summary:[/bold cyan]")
+    if providers_updated:
+        console.print(f"[green][OK][/green] Updated: {', '.join(providers_updated)}")
+    if providers_skipped:
+        console.print(f"[dim]Skipped:[/dim] {', '.join(providers_skipped)}")
+    console.print(f"\n[dim]All files are at version {SLASH_COMMAND_VERSION}[/dim]")
+
+
 def _setup_provider_interactive(provider: str):
     """Interactive setup for any AI provider."""
     provider_config = AI_PROVIDERS[provider]
