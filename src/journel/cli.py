@@ -48,6 +48,12 @@ AI_PROVIDERS = {
         "file_name": "copilot-instructions.md",
         "file_format": "markdown",
     },
+    "cursor": {
+        "name": "Cursor",
+        "command_dir": ".",
+        "file_name": ".cursorrules",
+        "file_format": "markdown",
+    },
 }
 
 
@@ -425,6 +431,43 @@ If the command reports an update, refresh VS Code to reload these instructions.
 """
 
 
+def _get_cursor_instructions_content() -> str:
+    """Get the Cursor instructions content (Markdown format for .cursorrules)."""
+    # Get Claude instructions and adapt for Cursor
+    claude_instructions = _get_claude_slash_command_content()
+
+    # Extract just the instructions part (skip the markdown header/version)
+    lines = claude_instructions.split('\n')
+    # Find where the actual instructions start (after the version header)
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip() == '---':
+            start_idx = i + 1
+            break
+
+    prompt_content = '\n'.join(lines[start_idx:]).strip()
+
+    # Replace Claude-specific references with Cursor-specific ones
+    prompt_content = prompt_content.replace('You are Claude Code', 'You are Cursor')
+    prompt_content = prompt_content.replace('Claude Code', 'Cursor')
+    prompt_content = prompt_content.replace('agent="claude-code"', 'agent="cursor"')
+    prompt_content = prompt_content.replace('--agent copilot', '--agent cursor')
+
+    return f"""<!-- VERSION: {SLASH_COMMAND_VERSION} -->
+<!-- Managed by JOURNEL. Update with: jnl setup cursor -->
+
+# JOURNEL AI Integration Instructions
+
+**ACTION REQUIRED: Run `jnl ai-setup cursor` to verify these instructions are current.**
+
+If the command reports an update, restart Cursor to reload these instructions.
+
+---
+
+{prompt_content}
+"""
+
+
 def _get_slash_command_content_for_provider(provider: str) -> str:
     """Get the slash command content for a specific provider."""
     if provider == "claude":
@@ -433,6 +476,8 @@ def _get_slash_command_content_for_provider(provider: str) -> str:
         return _get_gemini_slash_command_content()
     elif provider == "copilot":
         return _get_copilot_instructions_content()
+    elif provider == "cursor":
+        return _get_cursor_instructions_content()
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -2330,7 +2375,7 @@ def sync():
 
 @main.group(name="setup")
 def setup_group():
-    """Setup AI provider integration (Claude Code, Gemini CLI, GitHub Copilot, etc.)."""
+    """Setup AI provider integration (Claude Code, Gemini CLI, GitHub Copilot, Cursor, etc.)."""
     pass
 
 
@@ -2373,9 +2418,22 @@ def setup_copilot_new():
     _setup_provider_interactive("copilot")
 
 
+@setup_group.command(name="cursor")
+def setup_cursor_new():
+    """Create/update Cursor instructions for /journel (interactive).
+
+    Creates or updates .cursorrules in the current directory
+    with instructions for Cursor to use JOURNEL's AI integration features.
+
+    This is the human-friendly version with prompts.
+    For LLM usage, see: jnl ai-setup cursor
+    """
+    _setup_provider_interactive("cursor")
+
+
 @setup_group.command(name="all")
 def setup_all():
-    """Create/update instructions for all AI providers (Claude, Gemini, Copilot).
+    """Create/update instructions for all AI providers (Claude, Gemini, Copilot, Cursor).
 
     Sets up JOURNEL integration for all supported AI assistants at once.
     You can skip individual providers if you don't use them.
@@ -2517,6 +2575,25 @@ def ai_setup_copilot_new():
         [OK] Updated to v1.0.1 - Re-reading instructions...
     """
     _ai_setup_provider("copilot")
+
+
+@ai_setup_group.command(name="cursor")
+def ai_setup_cursor_new():
+    """Update Cursor instructions (non-interactive, LLM-friendly).
+
+    Checks and updates .cursorrules without prompts.
+    Designed for use by AI assistants (like Cursor).
+
+    Exit codes:
+        0 - Already up to date (no action needed)
+        1 - File was created/updated (LLM should re-read)
+        2 - Error occurred
+
+    Output format (parseable by LLMs):
+        [OK] Instructions current (v1.0.0)
+        [OK] Updated to v1.0.1 - Re-reading instructions...
+    """
+    _ai_setup_provider("cursor")
 
 
 def _ai_setup_provider(provider: str):
