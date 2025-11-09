@@ -1179,6 +1179,391 @@ def get(project_id, format):
 
 
 @main.command()
+@click.option("--filter", "filter_expr", help="Filter expression (e.g. 'project_type=regular')")
+@click.option("--project-type", type=click.Choice(["regular", "ongoing", "maintenance"]), help="Filter by project type")
+@click.option("--status", type=click.Choice(["in-progress", "completed", "archived"]), help="Filter by status")
+@click.option("--tag", help="Filter by tag")
+@click.option("--priority", type=click.Choice(["low", "medium", "high"]), help="Filter by priority")
+@click.option("--dormant", is_flag=True, help="Find dormant projects (inactive > 14 days)")
+@click.option("--dormant-days", type=int, default=14, help="Days to consider dormant (default: 14)")
+@click.option("--nearly-done", is_flag=True, help="Find nearly complete projects")
+@click.option("--completion-threshold", type=int, default=80, help="Completion threshold for --nearly-done (default: 80)")
+@click.option("--min-completion", type=int, help="Minimum completion percentage")
+@click.option("--max-completion", type=int, help="Maximum completion percentage")
+@click.option("--fields", help="Comma-separated fields to return (e.g. 'name,completion,last_active')")
+@click.option("--format", type=click.Choice(["text", "json"]), default="json", help="Output format (default: json)")
+def query(filter_expr, project_type, status, tag, priority, dormant, dormant_days,
+          nearly_done, completion_threshold, min_completion, max_completion, fields, format):
+    """Advanced project querying with filters.
+
+    Query projects using various filters and get structured output.
+    Perfect for AI analysis and batch operations.
+
+    Usage:
+        jnl query --project-type regular
+        jnl query --status in-progress --priority high
+        jnl query --dormant --dormant-days 30
+        jnl query --nearly-done --completion-threshold 80
+        jnl query --tag urgent --format json
+        jnl query --min-completion 50 --max-completion 75
+        jnl query --fields "name,completion,priority"
+
+    The --filter option supports expressions like:
+        project_type=regular
+        status=in-progress
+        completion>50
+    """
+    storage = get_storage()
+    projects = storage.list_projects(include_archived=(status == "archived"))
+
+    # Apply filters
+    filtered = []
+    for p in projects:
+        # Type filter
+        if project_type and p.project_type != project_type:
+            continue
+
+        # Status filter
+        if status and p.status != status:
+            continue
+
+        # Tag filter
+        if tag and tag not in p.tags:
+            continue
+
+        # Priority filter
+        if priority and p.priority != priority:
+            continue
+
+        # Dormant filter
+        if dormant:
+            if p.status == "completed" or p.days_since_active() <= dormant_days:
+                continue
+
+        # Nearly done filter
+        if nearly_done:
+            if p.completion < completion_threshold or p.status == "completed":
+                continue
+
+        # Completion range filters
+        if min_completion is not None and p.completion < min_completion:
+            continue
+        if max_completion is not None and p.completion > max_completion:
+            continue
+
+        # Custom filter expression (simple implementation)
+        if filter_expr:
+            try:
+                # Parse simple expressions like "completion>50"
+                if "=" in filter_expr:
+                    field, value = filter_expr.split("=", 1)
+                    field = field.strip()
+                    value = value.strip()
+                    if hasattr(p, field):
+                        if str(getattr(p, field)) != value:
+                            continue
+                elif ">" in filter_expr:
+                    field, value = filter_expr.split(">", 1)
+                    field = field.strip()
+                    value = int(value.strip())
+                    if hasattr(p, field):
+                        if getattr(p, field) <= value:
+                            continue
+                elif "<" in filter_expr:
+                    field, value = filter_expr.split("<", 1)
+                    field = field.strip()
+                    value = int(value.strip())
+                    if hasattr(p, field):
+                        if getattr(p, field) >= value:
+                            continue
+            except Exception:
+                # Invalid filter expression, skip
+                pass
+
+        filtered.append(p)
+
+    # Determine which fields to include
+    if fields:
+        field_list = [f.strip() for f in fields.split(",")]
+    else:
+        field_list = None
+
+    # Output results
+    if format == "json":
+        import json
+        projects_data = []
+        for p in filtered:
+            if field_list:
+                # Only include requested fields
+                project_data = {"id": p.id}  # Always include ID
+                for field in field_list:
+                    if hasattr(p, field):
+                        value = getattr(p, field)
+                        # Handle date serialization
+                        if hasattr(value, 'isoformat'):
+                            value = value.isoformat()
+                        project_data[field] = value
+            else:
+                # Include all fields
+                project_data = {
+                    "id": p.id,
+                    "name": p.name,
+                    "full_name": p.full_name,
+                    "status": p.status,
+                    "tags": p.tags,
+                    "created": p.created.isoformat() if hasattr(p.created, 'isoformat') else str(p.created),
+                    "last_active": p.last_active.isoformat() if hasattr(p.last_active, 'isoformat') else str(p.last_active),
+                    "days_since_active": p.days_since_active(),
+                    "completion": p.completion,
+                    "priority": p.priority,
+                    "project_type": p.project_type,
+                    "github": p.github,
+                    "claude_project": p.claude_project,
+                    "next_steps": p.next_steps,
+                    "blockers": p.blockers,
+                }
+            projects_data.append(project_data)
+
+        result = {
+            "projects": projects_data,
+            "count": len(projects_data),
+            "filters": {
+                "project_type": project_type,
+                "status": status,
+                "tag": tag,
+                "priority": priority,
+                "dormant": dormant,
+                "nearly_done": nearly_done,
+            }
+        }
+        print(json.dumps(result, indent=2))
+    else:
+        # Text output
+        if not filtered:
+            print_info("No projects match the query")
+            return
+
+        title = f"Query Results ({len(filtered)} projects)"
+        print_list(filtered, title=title)
+
+
+@main.command()
+@click.option("--filter", "filter_expr", help="Filter expression (e.g. 'project_type=regular')")
+@click.option("--project-type", type=click.Choice(["regular", "ongoing", "maintenance"]), help="Filter by project type")
+@click.option("--status", type=click.Choice(["in-progress", "completed", "archived"]), help="Filter by status")
+@click.option("--tag", help="Filter by tag")
+@click.option("--priority", type=click.Choice(["low", "medium", "high"]), help="Filter by priority")
+@click.option("--dormant", is_flag=True, help="Find dormant projects (inactive > 14 days)")
+@click.option("--dormant-days", type=int, default=14, help="Days to consider dormant (default: 14)")
+@click.option("--action", type=click.Choice(["archive", "set-priority", "add-tag", "set-completion"]), required=True, help="Action to perform")
+@click.option("--action-value", help="Value for the action (e.g. priority level, tag name, completion %)")
+@click.option("--dry-run", is_flag=True, help="Preview changes without applying them")
+@click.option("--format", type=click.Choice(["text", "json"]), default="json", help="Output format (default: json)")
+def batch(filter_expr, project_type, status, tag, priority, dormant, dormant_days,
+          action, action_value, dry_run, format):
+    """Perform batch operations on multiple projects.
+
+    Query projects using filters and apply bulk operations with dry-run support.
+    Perfect for automation and bulk project management.
+
+    Usage:
+        # Preview archiving dormant projects
+        jnl batch --dormant --action archive --dry-run
+
+        # Archive all dormant projects
+        jnl batch --dormant --action archive
+
+        # Set priority on all ongoing projects
+        jnl batch --project-type ongoing --action set-priority --action-value high
+
+        # Add tag to all in-progress regular projects
+        jnl batch --project-type regular --status in-progress --action add-tag --action-value urgent
+
+        # Set completion on nearly-done projects
+        jnl batch --filter "completion>80" --action set-completion --action-value 90
+    """
+    storage = get_storage()
+    projects = storage.list_projects(include_archived=(status == "archived"))
+
+    # Apply same filters as query command
+    filtered = []
+    for p in projects:
+        if project_type and p.project_type != project_type:
+            continue
+        if status and p.status != status:
+            continue
+        if tag and tag not in p.tags:
+            continue
+        if priority and p.priority != priority:
+            continue
+        if dormant:
+            if p.status == "completed" or p.days_since_active() <= dormant_days:
+                continue
+
+        # Custom filter expression
+        if filter_expr:
+            try:
+                if "=" in filter_expr:
+                    field, value = filter_expr.split("=", 1)
+                    field = field.strip()
+                    value = value.strip()
+                    if hasattr(p, field):
+                        if str(getattr(p, field)) != value:
+                            continue
+                elif ">" in filter_expr:
+                    field, value = filter_expr.split(">", 1)
+                    field = field.strip()
+                    value = int(value.strip())
+                    if hasattr(p, field):
+                        if getattr(p, field) <= value:
+                            continue
+                elif "<" in filter_expr:
+                    field, value = filter_expr.split("<", 1)
+                    field = field.strip()
+                    value = int(value.strip())
+                    if hasattr(p, field):
+                        if getattr(p, field) >= value:
+                            continue
+            except Exception:
+                pass
+
+        filtered.append(p)
+
+    if not filtered:
+        if format == "json":
+            import json
+            print(json.dumps({"success": False, "error": "No projects match the filters", "affected": 0}))
+        else:
+            print_info("No projects match the filters")
+        return
+
+    # Prepare results tracking
+    results = {
+        "success": True,
+        "dry_run": dry_run,
+        "action": action,
+        "action_value": action_value,
+        "matched": len(filtered),
+        "affected": [],
+        "skipped": [],
+        "errors": [],
+    }
+
+    # Perform action
+    for p in filtered:
+        try:
+            if action == "archive":
+                if p.status == "archived":
+                    results["skipped"].append({"id": p.id, "reason": "already archived"})
+                    continue
+
+                if not dry_run:
+                    p.status = "archived"
+                    storage.move_to_archived(p)
+
+                results["affected"].append({"id": p.id, "name": p.name, "action": "archived"})
+
+            elif action == "set-priority":
+                if not action_value:
+                    results["errors"].append({"id": p.id, "error": "no priority value provided"})
+                    continue
+
+                old_priority = p.priority
+                if not dry_run:
+                    p.priority = action_value
+                    storage.save_project(p)
+
+                results["affected"].append({
+                    "id": p.id,
+                    "name": p.name,
+                    "action": "set-priority",
+                    "old_value": old_priority,
+                    "new_value": action_value
+                })
+
+            elif action == "add-tag":
+                if not action_value:
+                    results["errors"].append({"id": p.id, "error": "no tag value provided"})
+                    continue
+
+                if action_value in p.tags:
+                    results["skipped"].append({"id": p.id, "reason": f"already has tag '{action_value}'"})
+                    continue
+
+                if not dry_run:
+                    p.tags.append(action_value)
+                    storage.save_project(p)
+
+                results["affected"].append({
+                    "id": p.id,
+                    "name": p.name,
+                    "action": "add-tag",
+                    "tag": action_value
+                })
+
+            elif action == "set-completion":
+                if not action_value:
+                    results["errors"].append({"id": p.id, "error": "no completion value provided"})
+                    continue
+
+                try:
+                    completion_val = int(action_value)
+                    if not (0 <= completion_val <= 100):
+                        raise ValueError("completion must be 0-100")
+
+                    old_completion = p.completion
+                    if not dry_run:
+                        p.completion = completion_val
+                        storage.save_project(p)
+
+                    results["affected"].append({
+                        "id": p.id,
+                        "name": p.name,
+                        "action": "set-completion",
+                        "old_value": old_completion,
+                        "new_value": completion_val
+                    })
+                except ValueError as e:
+                    results["errors"].append({"id": p.id, "error": str(e)})
+                    continue
+
+        except Exception as e:
+            results["errors"].append({"id": p.id, "error": str(e)})
+
+    # Update index if changes were made
+    if not dry_run and results["affected"]:
+        storage.update_project_index()
+
+    # Output results
+    if format == "json":
+        import json
+        print(json.dumps(results, indent=2))
+    else:
+        # Text output
+        if dry_run:
+            console.print(f"\n[bold yellow]DRY RUN - No changes applied[/bold yellow]\n")
+
+        console.print(f"[bold]Batch Operation: {action}[/bold]")
+        console.print(f"Matched: {results['matched']} projects")
+        console.print(f"Affected: {len(results['affected'])} projects")
+
+        if results['affected']:
+            console.print("\n[green]Affected projects:[/green]")
+            for item in results['affected']:
+                console.print(f"  - {item['name']} ({item['id']})")
+
+        if results['skipped']:
+            console.print(f"\n[yellow]Skipped: {len(results['skipped'])} projects[/yellow]")
+
+        if results['errors']:
+            console.print(f"\n[red]Errors: {len(results['errors'])} projects[/red]")
+            for err in results['errors']:
+                console.print(f"  - {err['id']}: {err['error']}")
+
+        console.print("")
+
+
+@main.command()
 @click.argument("project_id")
 @click.option("--completion", type=click.IntRange(0, 100), help="Set completion percentage (0-100)")
 @click.option("--priority", type=click.Choice(["low", "medium", "high"]), help="Set priority level")
