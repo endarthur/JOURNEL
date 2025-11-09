@@ -1,4 +1,4 @@
-<!-- VERSION: 2.0.0 -->
+<!-- VERSION: 2.1.0 -->
 <!-- Managed by JOURNEL. Update with: jnl setup claude -->
 
 # /journel - JOURNEL AI Integration Command
@@ -125,6 +125,65 @@ jnl ai-log "Fixed bug"
 
 # Or explicit:
 jnl ai-log journel "Fixed bug"
+```
+
+## Verifying Project Context
+
+**IMPORTANT**: ALWAYS verify which project you're working on before starting work or logging activity.
+
+### Step 1: Check Current Directory
+```bash
+pwd  # See where you are
+```
+
+### Step 2: Verify Auto-Detection
+```bash
+jnl get .  # Uses current directory name to detect project
+# Returns error if no match found
+```
+
+Example outputs:
+- ✅ Success: Shows project details (you're in the right place)
+- ❌ Error: "No project found matching current directory" (wrong directory or project doesn't exist)
+
+### Step 3: If Uncertain, List Projects
+```bash
+jnl list --show-id  # See all available project IDs
+```
+
+### Step 4: Use Explicit Project ID
+If auto-detection fails or you're in a different directory:
+```bash
+jnl ai-log koma-terminal "Work done"  # Explicit project ID
+jnl ai-start koma-terminal "Task"     # Explicit project ID
+```
+
+### Common Mistakes to Avoid
+
+❌ **DON'T** assume you're in the right project based on conversation context
+❌ **DON'T** use auto-detection without verifying first
+❌ **DON'T** guess project names
+
+✅ **DO** run `jnl get .` to verify auto-detection
+✅ **DO** use `jnl list --show-id` when unsure
+✅ **DO** use explicit project IDs when working across directories
+
+### Example Workflow
+
+```bash
+# User asks: "Log the work we just did"
+
+# Step 1: Check where we are
+pwd
+# Output: /home/user/projects/koma-terminal
+
+# Step 2: Verify project detection
+jnl get .
+# Output: Shows "koma-terminal" project details ✓
+
+# Step 3: Log with confidence
+jnl ai-log "Implemented terminal emulation feature (2h)"
+# JOURNEL auto-detects project as "koma-terminal" ✓
 ```
 
 ## Configuration
