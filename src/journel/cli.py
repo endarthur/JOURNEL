@@ -42,6 +42,12 @@ AI_PROVIDERS = {
         "file_name": "journel.toml",
         "file_format": "toml",
     },
+    "copilot": {
+        "name": "GitHub Copilot",
+        "command_dir": ".github",
+        "file_name": "copilot-instructions.md",
+        "file_format": "markdown",
+    },
 }
 
 
@@ -382,12 +388,51 @@ prompt = """
 '''
 
 
+def _get_copilot_instructions_content() -> str:
+    """Get the GitHub Copilot instructions content (Markdown format)."""
+    # Get Claude instructions and adapt for Copilot
+    claude_instructions = _get_claude_slash_command_content()
+
+    # Extract just the instructions part (skip the markdown header/version)
+    lines = claude_instructions.split('\n')
+    # Find where the actual instructions start (after the version header)
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip() == '---':
+            start_idx = i + 1
+            break
+
+    prompt_content = '\n'.join(lines[start_idx:]).strip()
+
+    # Replace Claude-specific references with Copilot-specific ones
+    prompt_content = prompt_content.replace('You are Claude Code', 'You are GitHub Copilot')
+    prompt_content = prompt_content.replace('Claude Code', 'GitHub Copilot')
+    prompt_content = prompt_content.replace('agent="claude-code"', 'agent="github-copilot"')
+    prompt_content = prompt_content.replace('--agent cursor', '--agent copilot')
+
+    return f"""<!-- VERSION: {SLASH_COMMAND_VERSION} -->
+<!-- Managed by JOURNEL. Update with: jnl setup copilot -->
+
+# JOURNEL AI Integration Instructions
+
+**ACTION REQUIRED: Run `jnl ai-setup copilot` to verify these instructions are current.**
+
+If the command reports an update, refresh VS Code to reload these instructions.
+
+---
+
+{prompt_content}
+"""
+
+
 def _get_slash_command_content_for_provider(provider: str) -> str:
     """Get the slash command content for a specific provider."""
     if provider == "claude":
         return _get_claude_slash_command_content()
     elif provider == "gemini":
         return _get_gemini_slash_command_content()
+    elif provider == "copilot":
+        return _get_copilot_instructions_content()
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -2285,7 +2330,7 @@ def sync():
 
 @main.group(name="setup")
 def setup_group():
-    """Setup AI provider integration (Claude Code, Gemini CLI, etc.)."""
+    """Setup AI provider integration (Claude Code, Gemini CLI, GitHub Copilot, etc.)."""
     pass
 
 
@@ -2313,6 +2358,19 @@ def setup_gemini_new():
     For LLM usage, see: jnl ai-setup gemini
     """
     _setup_provider_interactive("gemini")
+
+
+@setup_group.command(name="copilot")
+def setup_copilot_new():
+    """Create/update GitHub Copilot instructions for /journel (interactive).
+
+    Creates or updates .github/copilot-instructions.md in the current directory
+    with instructions for GitHub Copilot to use JOURNEL's AI integration features.
+
+    This is the human-friendly version with prompts.
+    For LLM usage, see: jnl ai-setup copilot
+    """
+    _setup_provider_interactive("copilot")
 
 
 def _setup_provider_interactive(provider: str):
@@ -2394,6 +2452,25 @@ def ai_setup_gemini_new():
         [OK] Updated to v1.0.1 - Re-reading instructions...
     """
     _ai_setup_provider("gemini")
+
+
+@ai_setup_group.command(name="copilot")
+def ai_setup_copilot_new():
+    """Update GitHub Copilot instructions (non-interactive, LLM-friendly).
+
+    Checks and updates .github/copilot-instructions.md without prompts.
+    Designed for use by AI assistants (like GitHub Copilot).
+
+    Exit codes:
+        0 - Already up to date (no action needed)
+        1 - File was created/updated (LLM should re-read)
+        2 - Error occurred
+
+    Output format (parseable by LLMs):
+        [OK] Instructions current (v1.0.0)
+        [OK] Updated to v1.0.1 - Re-reading instructions...
+    """
+    _ai_setup_provider("copilot")
 
 
 def _ai_setup_provider(provider: str):
