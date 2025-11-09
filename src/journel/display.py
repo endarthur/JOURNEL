@@ -363,13 +363,21 @@ def print_completion_celebration(project: Project, total_completed: int, use_emo
     console.print(Panel(celebration, border_style="green", expand=False))
 
 
-def print_list(projects: List[Project], title: str = "Projects") -> None:
-    """Print a list of projects in table format."""
+def print_list(projects: List[Project], title: str = "Projects", show_id: bool = False) -> None:
+    """Print a list of projects in table format.
+
+    Args:
+        projects: List of projects to display
+        title: Table title
+        show_id: If True, include project ID column
+    """
     if not projects:
         console.print("[dim]No projects found[/dim]")
         return
 
     table = Table(title=title, show_header=True, header_style="bold")
+    if show_id:
+        table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Status", style="yellow")
     table.add_column("Progress", justify="right")
@@ -379,13 +387,17 @@ def print_list(projects: List[Project], title: str = "Projects") -> None:
     for p in projects:
         # Use color-coded completion with progress bar
         completion_display = format_completion(p.completion, show_bar=True)
-        table.add_row(
+        row_data = []
+        if show_id:
+            row_data.append(p.id)
+        row_data.extend([
             p.name,
             p.status,
             completion_display,
             format_date_relative(p.last_active),
             ", ".join(p.tags[:2]) if p.tags else "",
-        )
+        ])
+        table.add_row(*row_data)
 
     console.print(table)
 

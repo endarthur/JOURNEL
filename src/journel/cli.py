@@ -1051,8 +1051,9 @@ def resume(project_id):
 @click.option("--completed", is_flag=True, help="Show only completed projects")
 @click.option("--archived", is_flag=True, help="Show only archived projects")
 @click.option("--tag", help="Filter by tag")
+@click.option("--show-id", is_flag=True, help="Show project IDs in output")
 @click.option("--format", type=click.Choice(["text", "json"]), default="text", help="Output format (text or json)")
-def list_projects(active, dormant, completed, archived, tag, format):
+def list_projects(active, dormant, completed, archived, tag, show_id, format):
     """List all projects with optional filters."""
     storage = get_storage()
 
@@ -1106,7 +1107,7 @@ def list_projects(active, dormant, completed, archived, tag, format):
             })
         print(json.dumps({"projects": projects_data, "count": len(projects_data), "filter": title}, indent=2))
     else:
-        print_list(projects, title=title)
+        print_list(projects, title=title, show_id=show_id)
 
 
 @main.command()
