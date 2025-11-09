@@ -225,17 +225,20 @@ Full details: jnl done --help[/dim]
   jnl list --completed
   jnl list --dormant
   jnl list --archived
+  jnl list --show-id              Show project IDs (for use in commands)
 
 [bold]WHAT IT SHOWS[/bold]
   - All your projects with details
   - Filterable by status
   - Last activity dates
   - Completion percentages
+  - Project IDs (with --show-id flag)
 
 [bold]WHEN TO USE IT[/bold]
   - Need to see everything
   - Looking for a specific project
   - Want more detail than status
+  - Need to know project IDs for CLI commands
 
 [dim]Full details: jnl list --help[/dim]
 """,
